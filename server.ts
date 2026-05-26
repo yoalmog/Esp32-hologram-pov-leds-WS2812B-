@@ -75,4 +75,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("Critical server startup failure:", err);
+  process.exit(1);
+});

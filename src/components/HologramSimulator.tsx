@@ -18,10 +18,10 @@ interface HologramSimulatorProps {
 }
 
 export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
-  effect,
-  speed,
-  brightness,
-  customColor,
+  effect = 'rainbow',
+  speed = 80,
+  brightness = 150,
+  customColor = '#00b4d8',
   logoUrl,
   povText = "POV SYSTEM HOLOSPIN 3D ",
   logoRotation = 0,
@@ -644,7 +644,11 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
                 c.drawImage(tintedCanvasRef.current, -drawW / 2, -drawH / 2, drawW, drawH);
               } catch (e) {
                 // Fallback to original image if tinted canvas is tainted
-                c.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+                try {
+                  c.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+                } catch (err) {
+                  // If fallback also fails (e.g. CORS), we must not throw
+                }
               }
             } else {
               try {

@@ -594,38 +594,54 @@ export default function App() {
     }
   };
 
+  const safeGetLocal = (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const safeRemoveLocal = (key: string) => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.warn("localStorage remove failed:", e);
+    }
+  };
+
   const [activeTab, setActiveTab] = useState("controller");
   const [subPage, setSubPage] = useState<string | null>(null);
   const [bgImageId, setBgImageId] = useState("galaxy1");
 
-  const [activeEffect, setActiveEffect] = useState(() => localStorage.getItem("holospin_activeEffect") || "rainbow");
-  const [logoUrl, setLogoUrl] = useState<string | null>(() => localStorage.getItem("holospin_logoUrl") || null);
+  const [activeEffect, setActiveEffect] = useState(() => safeGetLocal("holospin_activeEffect") || "rainbow");
+  const [logoUrl, setLogoUrl] = useState<string | null>(() => safeGetLocal("holospin_logoUrl") || null);
   const [logoRotation, setLogoRotation] = useState<number>(() => {
-    const val = Number(localStorage.getItem("holospin_logoRotation") || "0");
+    const val = Number(safeGetLocal("holospin_logoRotation") || "0");
     return isNaN(val) ? 0 : val;
   });
-  const [logoTintColor, setLogoTintColor] = useState<string>(() => localStorage.getItem("holospin_logoTintColor") || "#00b4d8");
-  const [useLogoTint, setUseLogoTint] = useState<boolean>(() => localStorage.getItem("holospin_useLogoTint") === "true");
-  const [povText, setPovText] = useState(() => localStorage.getItem("holospin_povText") || "POV SYSTEM HOLOSPIN 3D");
-  const [povTextAnimation, setPovTextAnimation] = useState<string>(() => localStorage.getItem("holospin_povTextAnimation") || "fade");
+  const [logoTintColor, setLogoTintColor] = useState<string>(() => safeGetLocal("holospin_logoTintColor") || "#00b4d8");
+  const [useLogoTint, setUseLogoTint] = useState<boolean>(() => safeGetLocal("holospin_useLogoTint") === "true");
+  const [povText, setPovText] = useState(() => safeGetLocal("holospin_povText") || "POV SYSTEM HOLOSPIN 3D");
+  const [povTextAnimation, setPovTextAnimation] = useState<string>(() => safeGetLocal("holospin_povTextAnimation") || "fade");
   const [brightness, setBrightness] = useState(() => {
-    const val = Number(localStorage.getItem("holospin_brightness") || "150");
+    const val = Number(safeGetLocal("holospin_brightness") || "150");
     return isNaN(val) ? 150 : val;
   });
   const [motorSpeed, setMotorSpeed] = useState(() => {
-    const val = Number(localStorage.getItem("holospin_motorSpeed") || "80");
+    const val = Number(safeGetLocal("holospin_motorSpeed") || "80");
     return isNaN(val) ? 80 : val;
   });
   const [effectSpeedRate, setEffectSpeedRate] = useState<number>(() => {
-    const val = Number(localStorage.getItem("holospin_effectSpeedRate") || "1.0");
-    return isNaN(val) ? 1.0 : val;
+    const val = Number(safeGetLocal("holospin_effectSpeedRate") || "1.0");
+    return isNaN(val) || val === 0 ? 1.0 : val;
   });
   const [effectScale, setEffectScale] = useState<number>(() => {
-    const val = Number(localStorage.getItem("holospin_effectScale") || "1.0");
-    return isNaN(val) ? 1.0 : val;
+    const val = Number(safeGetLocal("holospin_effectScale") || "1.0");
+    return isNaN(val) || val === 0 ? 1.0 : val;
   });
   const [effectComplexity, setEffectComplexity] = useState<number>(() => {
-    const val = Number(localStorage.getItem("holospin_effectComplexity") || "8");
+    const val = Number(safeGetLocal("holospin_effectComplexity") || "8");
     return isNaN(val) ? 8 : val;
   });
 
@@ -634,16 +650,16 @@ export default function App() {
 
   // Connection and Sensor State
   const [isConnected, setIsConnected] = useState(false);
-  const [hallPulses, setHallPulses] = useState(0);
+  const [hallPulses, setHallPulses] = useState<number[]>([]);
 
   // Calibration Flow States
   const [showCalibrateModal, setShowCalibrateModal] = useState(false);
   const [calibrationStage, setCalibrationStage] = useState<"idle" | "requesting" | "calibrating" | "success" | "error">("idle");
   const [deviceStatus, setDeviceStatus] = useState<string>("ready");
 
-  const [isLightMode, setIsLightMode] = useState<boolean>(() => localStorage.getItem("isLightMode") === "true");
-  const [isSyncSpeedRate, setIsSyncSpeedRate] = useState<boolean>(() => localStorage.getItem("isSyncSpeedRate") === "true");
-  const [synthVideoUrl, setSynthVideoUrl] = useState<string | null>(() => localStorage.getItem("synthVideoUrl") || null);
+  const [isLightMode, setIsLightMode] = useState<boolean>(() => safeGetLocal("isLightMode") === "true");
+  const [isSyncSpeedRate, setIsSyncSpeedRate] = useState<boolean>(() => safeGetLocal("isSyncSpeedRate") === "true");
+  const [synthVideoUrl, setSynthVideoUrl] = useState<string | null>(() => safeGetLocal("synthVideoUrl") || null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -655,7 +671,7 @@ export default function App() {
 
   const [presets, setPresets] = useState<Record<string, any>>(() => {
     try {
-      const saved = localStorage.getItem("holospin_presets");
+      const saved = safeGetLocal("holospin_presets");
       return saved ? JSON.parse(saved) : { "1": null, "2": null, "3": null, "4": null };
     } catch {
       return { "1": null, "2": null, "3": null, "4": null };
@@ -741,7 +757,7 @@ export default function App() {
     const interval = setInterval(async () => {
       try {
         const res = await fetch("/status");
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error("Status fetch non-ok");
         const data = await res.json();
         setIsConnected(true);
         if (data.pulses) setHallPulses(data.pulses);
@@ -793,18 +809,18 @@ export default function App() {
     setIsApplyingPreset(true);
     setTimeout(() => setIsApplyingPreset(false), 800);
 
-    if (entry.activeEffect !== undefined) setActiveEffect(entry.activeEffect);
-    if (entry.motorSpeed !== undefined) setMotorSpeed(entry.motorSpeed);
-    if (entry.brightness !== undefined) setBrightness(entry.brightness);
-    if (entry.effectSpeedRate !== undefined) setEffectSpeedRate(entry.effectSpeedRate);
-    if (entry.effectScale !== undefined) setEffectScale(entry.effectScale);
-    if (entry.effectComplexity !== undefined) setEffectComplexity(entry.effectComplexity);
+    if (entry.activeEffect) setActiveEffect(entry.activeEffect);
+    if (typeof entry.motorSpeed === 'number') setMotorSpeed(entry.motorSpeed);
+    if (typeof entry.brightness === 'number') setBrightness(entry.brightness);
+    if (typeof entry.effectSpeedRate === 'number' && entry.effectSpeedRate > 0) setEffectSpeedRate(entry.effectSpeedRate);
+    if (typeof entry.effectScale === 'number' && entry.effectScale > 0) setEffectScale(entry.effectScale);
+    if (typeof entry.effectComplexity === 'number') setEffectComplexity(entry.effectComplexity);
     if (entry.logoUrl !== undefined) setLogoUrl(entry.logoUrl);
     if (entry.povText !== undefined) setPovText(entry.povText);
-    if (entry.logoRotation !== undefined) setLogoRotation(entry.logoRotation);
-    if (entry.logoTintColor !== undefined) setLogoTintColor(entry.logoTintColor);
+    if (typeof entry.logoRotation === 'number') setLogoRotation(entry.logoRotation);
+    if (entry.logoTintColor) setLogoTintColor(entry.logoTintColor);
     if (entry.useLogoTint !== undefined) setUseLogoTint(entry.useLogoTint);
-    if (entry.povTextAnimation !== undefined) setPovTextAnimation(entry.povTextAnimation);
+    if (entry.povTextAnimation) setPovTextAnimation(entry.povTextAnimation);
     setToastMessage(`Profile ${slotId} loaded successfully / פרופיל נטען בהצלחה`);
   };
 
@@ -947,7 +963,7 @@ export default function App() {
       },
     };
     try {
-      const saved = localStorage.getItem("holospin_state");
+      const saved = safeGetLocal("holospin_state");
       if (saved) {
         const parsed = JSON.parse(saved) || {};
         const safeParse = (cat: keyof typeof defaultState) => {
@@ -2104,11 +2120,11 @@ void loop()
             onClick={() => {
               if (confirm('Are you sure you want to restore default effects and settings values?')) {
                 setPresets({ "1": null, "2": null, "3": null, "4": null });
-                localStorage.removeItem("holospin_presets");
+                safeRemoveLocal("holospin_presets");
                 setIsLightMode(false);
                 setIsSyncSpeedRate(false);
-                localStorage.removeItem("isLightMode");
-                localStorage.removeItem("isSyncSpeedRate");
+                safeRemoveLocal("isLightMode");
+                safeRemoveLocal("isSyncSpeedRate");
               }
             }}
             className="w-full bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-xl text-[11px] font-bold tracking-widest uppercase transition border border-slate-700 active:scale-95 cursor-pointer"
@@ -2633,7 +2649,7 @@ void loop()
                   <button
                     onClick={() => {
                       setSynthVideoUrl(null);
-                      localStorage.removeItem("synthVideoUrl");
+                      safeRemoveLocal("synthVideoUrl");
                     }}
                     className="text-[9px] font-bold tracking-widest text-rose-500 hover:text-rose-400 uppercase"
                   >
@@ -3106,7 +3122,7 @@ void loop()
                     <button
                       onClick={() => {
                         setSynthVideoUrl(null);
-                        localStorage.removeItem("synthVideoUrl");
+                        safeRemoveLocal("synthVideoUrl");
                       }}
                       className="text-[9px] font-bold tracking-widest text-rose-500 hover:text-rose-400 uppercase"
                     >
@@ -3600,7 +3616,7 @@ void loop()
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">קצב התקדמות פנימי / Playback Time</span>
                   <span className="text-xs font-mono font-bold text-[#00b4d8]">
-                    {isSyncSpeedRate ? `Synced (x${effectSpeedRate.toFixed(1)})` : `x${effectSpeedRate.toFixed(1)}`}
+                    {isSyncSpeedRate ? `Synced (x${(effectSpeedRate || 1.0).toFixed(1)})` : `x${(effectSpeedRate || 1.0).toFixed(1)}`}
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
