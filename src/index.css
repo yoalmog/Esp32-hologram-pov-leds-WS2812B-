@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+:root {
+  --bg-app: #000000;
+  --bg-panel: #0c0e15;
+  --bg-panel-hover: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --border-color: rgba(30, 41, 59, 0.8);
+  --bg-card: #0c0e15;
+  --bg-card-inner: #050608;
+  --divider-color: rgba(30, 41, 59, 0.5);
+}
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-bg-app: var(--bg-app);
+  --color-bg-panel: var(--bg-panel);
+  --color-bg-panel-hover: var(--bg-panel-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-border-custom: var(--border-color);
+  --color-bg-card: var(--bg-card);
+  --color-bg-inner: var(--bg-card-inner);
+  --color-divider-custom: var(--divider-color);
+}
+
+body {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+  margin: 0;
+  padding: 0;
+}
