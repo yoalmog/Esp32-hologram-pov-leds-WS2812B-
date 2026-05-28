@@ -5,6 +5,7 @@ import butterfly from "../assets/images/hologram_butterfly_1779775623164.png";
 import planet from "../assets/images/hologram_planet_1779776225377.png";
 import galaxy2 from "../assets/images/rainbow_galaxy_1779781352503.png";
 import galaxy3 from "../assets/images/warm_galaxy_1779781369262.png";
+import spaceDark from "../assets/images/user_splash_bg_1779993731939.png";
 
 const video1 = "/videos/12656_Big_Bang_1080.webm";
 const video2 = "/videos/129936-745943770.mp4";
@@ -14,7 +15,7 @@ interface Props {
 }
 
 export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => {
-  const isVideo = bgImageId.startsWith("video");
+  const isVideo = bgImageId.startsWith("video") || bgImageId === "big_bang" || bgImageId === "neon_tunnel";
   const [videoPlayFailed, setVideoPlayFailed] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -22,33 +23,33 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
     if (bgImageId === "galaxy0") return galaxy0;
     if (bgImageId === "galaxy2") return galaxy2;
     if (bgImageId === "galaxy3") return galaxy3;
+    if (bgImageId === "spaceDark") return spaceDark;
     if (bgImageId === "butterfly") return butterfly;
     if (bgImageId === "planet") return planet;
     return galaxy1;
   };
 
   const getVideoSrc = () => {
-    if (bgImageId === "video1") return video1;
-    if (bgImageId === "video2") return video2;
+    if (bgImageId === "video1" || bgImageId === "big_bang") return video1;
+    if (bgImageId === "video2" || bgImageId === "neon_tunnel") return video2;
     return video1;
   };
 
   useEffect(() => {
     setVideoPlayFailed(false);
     
-    // On Android/Mobile, some browsers require a user interaction for autoplay if not muted
-    // But Capacitor apps usually allow it if muted + playInline
     if (isVideo && videoRef.current) {
       const video = videoRef.current;
-      video.muted = true;
-      video.setAttribute('webkit-playsinline', 'true');
-      video.setAttribute('playsinline', 'true');
+      
+      // Force reload if source changed
+      video.load();
 
       const playVideo = async () => {
         try {
+          video.muted = true;
           await video.play();
         } catch (err) {
-          console.warn("Autoplay blocked, retrying on potential interaction:", err);
+          console.warn("Autoplay blocked or failed:", err);
           setVideoPlayFailed(true);
         }
       };
@@ -58,7 +59,7 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
   }, [bgImageId, isVideo]);
 
   return (
-    <div className="fixed inset-0 -z-50 pointer-events-none overflow-hidden bg-black flex items-center justify-center">
+    <div className="absolute inset-0 pointer-events-none overflow-hidden bg-transparent flex items-center justify-center">
       <style>{`
         @keyframes micro-jitter {
           0%, 100% { transform: translate(0, 0); }
@@ -72,12 +73,10 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
       `}</style>
       
       {/* Background layer with forced hardware acceleration */}
-      <div 
-        className={`absolute inset-0 w-full h-full transform scale-110 filter blur-[0.3px] ${videoPlayFailed ? 'animate-jitter' : ''}`} 
-        style={{ transform: "translateZ(0) translate3d(0,0,0)", backfaceVisibility: "hidden" }}
-      >
+      <div className="absolute inset-0 w-full h-full">
         {isVideo ? (
           <video
+            key={getVideoSrc()}
             ref={videoRef}
             src={getVideoSrc()}
             autoPlay
@@ -85,18 +84,18 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
             muted
             playsInline
             preload="auto"
-            webkit-playsinline="true"
-            className="absolute w-full h-full object-cover opacity-80"
-            style={{ 
-              transform: "translate3d(0, 0, 0)",
-              willChange: "transform"
+            className="absolute inset-0 w-full h-full object-cover"
+            onCanPlay={() => setVideoPlayFailed(false)}
+            onError={(e) => {
+              console.error("Video error:", e);
+              setVideoPlayFailed(true);
             }}
           />
         ) : (
           <img
             src={getImgSrc()}
             alt="Galaxy Background"
-            className="absolute w-full h-full object-cover opacity-80 transition-opacity duration-1000"
+            className="absolute w-full h-full object-cover opacity-100 transition-opacity duration-1000"
             referrerPolicy="no-referrer"
             style={{ 
               transform: "translate3d(0, 0, 0)",
@@ -121,13 +120,13 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
 
       {/* Subtle pulsing glow in the center */}
       <div 
-        className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(236,72,153,0.18)_0%,transparent_50%)] transition-opacity duration-1000"
-        style={{ animation: 'pulse 4s ease-in-out infinite' }}
+        className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(236,72,153,0.1)_0%,transparent_70%)] transition-opacity duration-1000"
+        style={{ animation: 'pulse 6s ease-in-out infinite' }}
       ></div>
 
-      {/* Gradients to dim edges and blend into the dark UI */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/85 via-black/20 to-black/98 z-10"></div>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,#000000_150%)] opacity-85 z-10"></div>
+      {/* Gradients to dim edges and blend into the dark UI - MUCH LIGHTER NOW */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40 z-10"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_60%,#000000_130%)] opacity-40 z-10"></div>
     </div>
   );
 };

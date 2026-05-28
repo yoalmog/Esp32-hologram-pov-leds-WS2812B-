@@ -76,6 +76,7 @@ import galaxy1 from "./assets/images/hd_vivid_galaxy_1779780978111.png";
 import butterfly from "./assets/images/hologram_butterfly_1779775623164.png";
 import galaxy2 from "./assets/images/rainbow_galaxy_1779781352503.png";
 import galaxy3 from "./assets/images/warm_galaxy_1779781369262.png";
+import splashBg from "./assets/images/user_splash_bg_1779993731939.png";
 const video1 = "/videos/12656_Big_Bang_1080.webm";
 const video2 = "/videos/129936-745943770.mp4";
 
@@ -3363,6 +3364,17 @@ void loop()
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10"></div>
               <span className="relative z-20 font-bold text-white tracking-widest text-[11px]">HOLO PLANET</span>
             </div>
+
+            <div
+              className={`relative h-28 rounded-2xl border-2 overflow-hidden cursor-pointer flex flex-col justify-end p-4 transition-all ${
+                bgImageId === "spaceDark" ? "border-slate-400 shadow-[0_0_20px_rgba(255,255,255,0.1)]" : "border-slate-800"
+              }`}
+              onClick={() => setBgImageId("spaceDark")}
+            >
+              <img src={splashBg} alt="Cosmic Void" className="absolute inset-0 w-full h-full object-cover z-0 opacity-100" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10"></div>
+              <span className="relative z-20 font-bold text-white tracking-widest text-[11px]">COSMIC VOID</span>
+            </div>
           </div>
 
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mt-4">
@@ -4782,10 +4794,10 @@ void loop()
 
   if (showSplash) {
     return (
-      <div className="bg-black min-h-screen text-white font-sans w-full max-w-md mx-auto relative overflow-hidden flex items-center justify-center antialiased">
+      <div className="bg-transparent min-h-screen text-white font-sans w-full max-w-md mx-auto relative overflow-hidden flex items-center justify-center antialiased">
         <GalaxyBackground bgImageId="video1" />
-        {/* Subtle dark gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-black/80 z-0"></div>
+        {/* Subtle dark gradient overlay - lightened to show video better */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 z-0"></div>
         
         {showSplashLogo && (
           <motion.div 
@@ -4812,7 +4824,7 @@ void loop()
   }
 
   return (
-    <div className="bg-bg-app min-h-screen text-text-primary font-sans w-full max-w-md mx-auto shadow-2xl relative overflow-x-hidden flex flex-col antialiased">
+    <div className="bg-transparent min-h-screen text-text-primary font-sans w-full max-w-md mx-auto shadow-2xl relative overflow-x-hidden flex flex-col antialiased">
       <AnimatePresence>
         {showPermissions && (
           <PermissionsManager onComplete={handlePermissionsComplete} />
