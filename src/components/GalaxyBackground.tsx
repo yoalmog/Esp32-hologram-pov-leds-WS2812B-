@@ -35,25 +35,30 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
 
   useEffect(() => {
     setVideoPlayFailed(false);
+    
+    // On Android/Mobile, some browsers require a user interaction for autoplay if not muted
+    // But Capacitor apps usually allow it if muted + playInline
     if (isVideo && videoRef.current) {
-      // Must be muted for autoplay to have a chance
-      videoRef.current.muted = true;
-      const playPromise = videoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            // success
-          })
-          .catch((err) => {
-            console.warn("Autoplay blocked/failed, switching to fallback:", err);
-            setVideoPlayFailed(true);
-          });
-      }
+      const video = videoRef.current;
+      video.muted = true;
+      video.setAttribute('webkit-playsinline', 'true');
+      video.setAttribute('playsinline', 'true');
+
+      const playVideo = async () => {
+        try {
+          await video.play();
+        } catch (err) {
+          console.warn("Autoplay blocked, retrying on potential interaction:", err);
+          setVideoPlayFailed(true);
+        }
+      };
+      
+      playVideo();
     }
   }, [bgImageId, isVideo]);
 
   return (
-    <div className="fixed inset-0 -z-50 pointer-events-none overflow-hidden bg-[#020108] flex items-center justify-center">
+    <div className="fixed inset-0 -z-50 pointer-events-none overflow-hidden bg-black flex items-center justify-center">
       <style>{`
         @keyframes micro-jitter {
           0%, 100% { transform: translate(0, 0); }
@@ -65,23 +70,26 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
           animation: micro-jitter 0.15s infinite normal;
         }
       `}</style>
-      {/* High-fidelity background container with hardware acceleration */}
-      <div className={`absolute inset-0 w-full h-full transform scale-105 filter blur-[0.2px] contrast-[1.05] brightness-[0.9] saturate-[1.12] ${videoPlayFailed ? 'animate-jitter' : ''}`} style={{ transform: "translateZ(0)" }}>
-        {isVideo && !videoPlayFailed ? (
+      
+      {/* Background layer with forced hardware acceleration */}
+      <div 
+        className={`absolute inset-0 w-full h-full transform scale-110 filter blur-[0.3px] ${videoPlayFailed ? 'animate-jitter' : ''}`} 
+        style={{ transform: "translateZ(0) translate3d(0,0,0)", backfaceVisibility: "hidden" }}
+      >
+        {isVideo ? (
           <video
             ref={videoRef}
             src={getVideoSrc()}
-            preload="auto"
             autoPlay
             loop
             muted
             playsInline
-            disablePictureInPicture
-            crossOrigin="anonymous"
+            preload="auto"
+            webkit-playsinline="true"
             className="absolute w-full h-full object-cover opacity-80"
             style={{ 
-              imageRendering: "high-quality" as any,
-              transform: "translate3d(0, 0, 0)"
+              transform: "translate3d(0, 0, 0)",
+              willChange: "transform"
             }}
           />
         ) : (
@@ -91,8 +99,8 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
             className="absolute w-full h-full object-cover opacity-80 transition-opacity duration-1000"
             referrerPolicy="no-referrer"
             style={{ 
-              imageRendering: "high-quality" as any,
-              transform: "translate3d(0, 0, 0)"
+              transform: "translate3d(0, 0, 0)",
+              willChange: "transform"
             }}
           />
         )}

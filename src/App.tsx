@@ -860,9 +860,17 @@ export default function App() {
 
   useEffect(() => {
     if (showSplash === false) {
-      setTimeout(() => setShowPermissions(true), 500);
+      // Check if we already cleared permissions
+      if (safeGetLocal("holospin_permissions_granted") !== "true") {
+        setTimeout(() => setShowPermissions(true), 500);
+      }
     }
   }, [showSplash]);
+
+  const handlePermissionsComplete = () => {
+    setShowPermissions(false);
+    safeSaveLocal("holospin_permissions_granted", "true");
+  };
 
   const handleBluetoothConnect = async () => {
     try {
@@ -3658,12 +3666,24 @@ void loop()
               )}
 
               {state.wifi.mode === "AP" && (
-                <div className="flex items-center gap-3 p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl">
-                   <Wifi className="w-5 h-5 text-blue-400" />
-                   <div className="flex flex-col">
-                      <span className="text-[11px] font-bold text-slate-300">Default AP Active: {state.wifi.ssid}</span>
-                      <span className="text-[9px] text-slate-500">Pass: {state.wifi.pass} | IP: {state.wifi.ip}</span>
+                <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl">
+                   <div className="flex items-center gap-3">
+                      <Wifi className="w-5 h-5 text-blue-400" />
+                      <div className="flex flex-col">
+                         <span className="text-[11px] font-bold text-slate-300">Default AP Active: {state.wifi.ssid}</span>
+                         <span className="text-[9px] text-slate-500">Pass: {state.wifi.pass} | IP: {state.wifi.ip}</span>
+                      </div>
                    </div>
+                   {streamData?.rssi !== undefined && streamData.rssi > -100 && (
+                     <div className="flex flex-col items-end gap-1 px-2 border-l border-slate-800/50">
+                        <span className="text-[9px] font-bold text-sky-400 uppercase tracking-widest leading-none">SIGNAL</span>
+                        <div className="flex items-end gap-0.5 h-2">
+                           {[1, 2, 3, 4].map(i => (
+                             <div key={i} className={`w-0.5 rounded-full ${streamData.rssi > -90 + i*10 ? 'bg-sky-400' : 'bg-slate-800'}`} style={{ height: `${i*25}%` }}></div>
+                           ))}
+                        </div>
+                     </div>
+                   )}
                 </div>
               )}
             </div>
@@ -4795,7 +4815,7 @@ void loop()
     <div className="bg-bg-app min-h-screen text-text-primary font-sans w-full max-w-md mx-auto shadow-2xl relative overflow-x-hidden flex flex-col antialiased">
       <AnimatePresence>
         {showPermissions && (
-          <PermissionsManager onComplete={() => setShowPermissions(false)} />
+          <PermissionsManager onComplete={handlePermissionsComplete} />
         )}
       </AnimatePresence>
       {isLightMode && (

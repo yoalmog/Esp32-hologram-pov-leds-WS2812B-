@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { BleClient } from '@capacitor-community/bluetooth-le';
 import { Camera } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
+import { Network } from '@capacitor/network';
 import { ShieldCheck, ShieldAlert, Wifi, Bluetooth, Camera as CameraIcon, MapPin } from 'lucide-react';
 
 interface Props {
@@ -10,11 +11,11 @@ interface Props {
 }
 
 export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
-  const [status, setStatus] = useState({
+  const [status, setStatus] = useState<Record<string, 'pending' | 'granted' | 'denied' | 'error'>>({
     bluetooth: 'pending',
     camera: 'pending',
     location: 'pending',
-    wifi: 'pending'
+    network: 'pending'
   });
   const [isInitializing, setIsInitializing] = useState(true);
 
@@ -23,13 +24,24 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
     
     // 1. Bluetooth
     try {
+      // For Bluetooth on Android, we often need to initialize first
       await BleClient.initialize();
-      // Try to enable if disabled (Android specific)
-      try { await BleClient.enable(); } catch(e) {}
+      // On some platforms, checking if it's enabled helps trigger permissions
+      const enabled = await BleClient.isEnabled();
+      if (!enabled && /android/i.test(navigator.userAgent)) {
+        try { await BleClient.enable(); } catch(e) {}
+      }
       setStatus(s => ({ ...s, bluetooth: 'granted' }));
     } catch (e) {
-      console.warn("BLE Init failed:", e);
-      setStatus(s => ({ ...s, bluetooth: 'error' }));
+      console.warn("BLE Init error:", e);
+      // Fallback: requestPermissions might be available depending on plugin version
+      try {
+        const p = await BleClient.requestLEScan({ services: [] }, (res) => {}).catch(() => null);
+        if (p) setStatus(s => ({ ...s, bluetooth: 'granted' }));
+        else setStatus(s => ({ ...s, bluetooth: 'denied' }));
+      } catch (err) {
+        setStatus(s => ({ ...s, bluetooth: 'error' }));
+      }
     }
 
     // 2. Camera
@@ -40,16 +52,23 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
       setStatus(s => ({ ...s, camera: 'denied' }));
     }
 
-    // 3. Location (needed for BLE on Android)
+    // 3. Location (Crucial for BLE scanning on Android)
     try {
       const p = await Geolocation.requestPermissions();
-      setStatus(s => ({ ...s, location: p.location === 'granted' || p.coarseLocation === 'granted' ? 'granted' : 'denied' }));
+      const granted = p.location === 'granted' || p.coarseLocation === 'granted';
+      setStatus(s => ({ ...s, location: granted ? 'granted' : 'denied' }));
     } catch (e) {
       setStatus(s => ({ ...s, location: 'denied' }));
     }
 
-    // 4. WiFi / Network (Network plugin doesn't need permissions usually but we check connectivity)
-    setStatus(s => ({ ...s, wifi: 'granted' }));
+    // 4. WiFi / Network Status
+    try {
+      // Network plugin typically doesn't have a permission prompt, but it's required for setup
+      const net = await Network.getStatus();
+      setStatus(s => ({ ...s, network: net.connected ? 'granted' : 'granted' })); // Always "granted" if it runs, but useful to surface
+    } catch (e) {
+      setStatus(s => ({ ...s, network: 'granted' }));
+    }
 
     setIsInitializing(false);
   };
@@ -103,7 +122,7 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
           <PermissionRow 
             icon={<Wifi className="w-4 h-4" />} 
             label="Network Stack" 
-            status={status.wifi} 
+            status={status.network} 
           />
         </div>
 

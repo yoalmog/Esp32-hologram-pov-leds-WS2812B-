@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Activity, Cpu, Lightbulb, RotateCcw } from "lucide-react";
+import { Activity, Cpu, Lightbulb, RotateCcw, Wifi } from "lucide-react";
 
 export function HardwareHealth({ 
   apiUrl = "/status", 
@@ -63,6 +63,20 @@ export function HardwareHealth({
   const hallStatus = healthData ? (healthData.rpm !== undefined ? "ok" : "unknown") : "unknown";
   const ledStatus = healthData ? (healthData.sync ? "calibrated" : "ok") : "unknown";
   const motorStatus = healthData ? (healthData.status === "ready" || healthData.rpm > 0 ? "ok" : "unknown") : "unknown";
+  const rssi = healthData?.rssi;
+
+  const getRssiColor = (val: number) => {
+    if (val > -60) return "text-emerald-400";
+    if (val > -80) return "text-amber-400";
+    return "text-red-500";
+  };
+
+  const getRssiLabel = (val: number) => {
+    if (val === undefined || val === -100) return "OFF";
+    if (val > -60) return "EXCELLENT";
+    if (val > -80) return "GOOD";
+    return "POOR";
+  };
 
   return (
     <div className="w-full bg-[#050608] border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
@@ -77,7 +91,7 @@ export function HardwareHealth({
         </div>
       </div>
       
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Hall Sensor */}
         <div className="bg-[#0b0d14] rounded-xl p-3 border border-slate-800/80 flex flex-col items-center justify-center gap-2 relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-1">
@@ -111,6 +125,22 @@ export function HardwareHealth({
           <div className="text-center">
             <div className="text-[10px] font-bold text-white uppercase tracking-widest">Motor</div>
             <div className={`text-[9px] font-mono mt-0.5 ${getActivityColor(motorStatus)}`}>{getStatusText(motorStatus)}</div>
+          </div>
+        </div>
+
+        {/* WiFi RSSI */}
+        <div className="bg-[#0b0d14] rounded-xl p-3 border border-slate-800/80 flex flex-col items-center justify-center gap-2 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-1 flex gap-0.5 items-end h-2">
+             {[1, 2, 3, 4].map(i => (
+               <div key={i} className={`w-0.5 rounded-full ${rssi !== undefined && rssi > -100 && (rssi > -90 + i*10) ? 'bg-sky-400' : 'bg-slate-800'}`} style={{ height: `${i*25}%` }}></div>
+             ))}
+          </div>
+          <Wifi className={`w-6 h-6 ${rssi !== undefined ? getRssiColor(rssi) : 'text-slate-700'}`} />
+          <div className="text-center">
+            <div className="text-[10px] font-bold text-white uppercase tracking-widest">Signal</div>
+            <div className={`text-[9px] font-mono mt-0.5 ${rssi !== undefined ? getRssiColor(rssi) : 'text-slate-600'}`}>
+              {rssi !== undefined && rssi > -100 ? `${rssi} dBm` : 'OFF'}
+            </div>
           </div>
         </div>
       </div>

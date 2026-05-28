@@ -3,7 +3,7 @@
 
 ## 1. SERIAL MONITOR LOGS (EXPECTED BOOT SEQUENCE)
 ```text
-[00:00:00.12] [SYS] HoloSpin PRO v2.1.0 Initializing...
+[00:00:00.12] [SYS] HoloSpin v2.1.0 Initializing...
 [00:00:00.15] [MEM] Free Heap: 224,512 bytes
 [00:00:00.20] [FS] LittleFS Mounted Successfully (Used: 42KB / 1.5MB)
 [00:00:00.25] [LED] FastLED initialized on GPIO 13. Count: 256
