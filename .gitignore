@@ -6,10 +6,3 @@ coverage/
 *.log
 .env*
 !.env.example
-
-# PlatformIO
-firmware/.pio/
-firmware/.vscode/
-
-# Stealth workspace metadata
-.stealth/

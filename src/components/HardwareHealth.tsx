@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Activity, Cpu, Lightbulb, RotateCcw } from "lucide-react";
 
-export function HardwareHealth() {
+export function HardwareHealth({ apiUrl = "/status" }: { apiUrl?: string }) {
   const [healthData, setHealthData] = useState<any>(null);
   const [isPolling, setIsPolling] = useState(true);
 
@@ -12,7 +12,7 @@ export function HardwareHealth() {
       try {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), 2000);
-        const res = await fetch("/api/diagnostic", { signal: controller.signal });
+        const res = await fetch(apiUrl, { signal: controller.signal });
         clearTimeout(id);
         if (res.ok) {
           const data = await res.json();
@@ -27,11 +27,12 @@ export function HardwareHealth() {
     fetchHealth();
     const interval = setInterval(fetchHealth, 3000);
     return () => clearInterval(interval);
-  }, [isPolling]);
+  }, [isPolling, apiUrl]);
 
   const getActivityColor = (status: string) => {
     switch (status) {
       case "ok":
+      case "ready": 
       case "healthy": return "text-emerald-400";
       case "warning": return "text-amber-400";
       case "error": return "text-red-500";
@@ -42,6 +43,7 @@ export function HardwareHealth() {
   const getStatusText = (status: string) => {
     switch (status) {
       case "ok":
+      case "ready":
       case "healthy": return "OK";
       case "warning": return "WARN";
       case "error": return "ERR";
@@ -49,9 +51,9 @@ export function HardwareHealth() {
     }
   };
 
-  const hallStatus = healthData?.sensor?.status || "unknown";
-  const ledStatus = healthData?.leds?.status || "unknown";
-  const motorStatus = healthData?.motor?.status || "unknown";
+  const hallStatus = healthData ? (healthData.rpm !== undefined ? "ok" : "unknown") : "unknown";
+  const ledStatus = healthData ? "ok" : "unknown";
+  const motorStatus = healthData ? (healthData.status === "ready" ? "ok" : "unknown") : "unknown";
 
   return (
     <div className="w-full bg-[#050608] border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
