@@ -3231,7 +3231,7 @@ void loop()
               }`}
               onClick={() => setBgImageId("planet")}
             >
-              <img src={planet} alt="Planet" className="absolute inset-0 w-full h-full object-cover z-0 opacity-60" />
+              <img src={planetImg} alt="Planet" className="absolute inset-0 w-full h-full object-cover z-0 opacity-60" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10"></div>
               <span className="relative z-20 font-bold text-white tracking-widest text-[11px]">HOLO PLANET</span>
             </div>
