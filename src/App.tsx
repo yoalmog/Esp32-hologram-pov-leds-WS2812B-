@@ -763,7 +763,11 @@ export default function App() {
     }
   };
   const [subPage, setSubPage] = useState<string | null>(null);
-  const [bgImageId, setBgImageId] = useState("video2");
+  const [bgImageId, setBgImageId] = useState(() => safeGetLocal("holospin_bgImageId") || "video1");
+  
+  useEffect(() => {
+    safeSaveLocal("holospin_bgImageId", bgImageId);
+  }, [bgImageId]);
 
   const [activeEffect, setActiveEffect] = useState(() => safeGetLocal("holospin_activeEffect") || "rainbow");
   const [logoUrl, setLogoUrl] = useState<string | null>(() => safeGetLocal("holospin_logoUrl") || null);
@@ -3621,1131 +3625,123 @@ void loop()
       );
     }
 
-    if (activeTab === "devices") {
-      return (
-        <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 font-sans">
-          <div className="flex flex-col gap-3 mt-4">
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-0">
-              NETWORK CONFIGURATION / הגדרות רשת
-            </h3>
-            <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15] flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col">
-                  <span className="text-[12px] font-bold text-slate-200">WiFi Connection Mode</span>
-                  <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Active: {state.wifi.mode} ({state.wifi.mode === "AP" ? "Access Point" : "Station/LAN"})</span>
-                </div>
-                <div className="flex bg-slate-900 p-1 rounded-lg">
-                   <button 
-                     onClick={() => setState((prev: any) => ({...prev, wifi: {...prev.wifi, mode: "AP"}}))}
-                     className={`px-3 py-1 rounded text-[10px] font-bold transition ${state.wifi.mode === 'AP' ? 'bg-[#38bdf8] text-black shadow-lg' : 'text-slate-500'}`}
-                   >AP</button>
-                   <button 
-                     onClick={() => setState((prev: any) => ({...prev, wifi: {...prev.wifi, mode: "STA"}}))}
-                     className={`px-3 py-1 rounded text-[10px] font-bold transition ${state.wifi.mode === 'STA' ? 'bg-[#38bdf8] text-black shadow-lg' : 'text-slate-500'}`}
-                   >STA</button>
-                </div>
+      if (activeTab === "controller") {
+        return (
+          <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="w-full max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-center my-8">
+              <div className="flex justify-center items-center w-full max-w-[280px] aspect-square mx-auto relative">
+                <motion.div
+                  className="w-full h-full rounded-full border-[2px] border-slate-800 bg-[#050608] flex items-center justify-center overflow-hidden relative shadow-[0_0_50px_rgba(34,180,216,0.2)]"
+                  animate={isApplyingPreset ? { scale: [1, 1.08, 1], rotate: [0, 5, -5, 0], filter: ['brightness(1)', 'brightness(1.8)', 'brightness(1)'] } : { scale: 1, rotate: 0 }}
+                  transition={{ duration: 0.8, ease: "easeInOut" }}
+                >
+                  <HologramSimulator
+                    effect={activeEffect}
+                    speed={motorSpeed}
+                    brightness={brightness}
+                    logoUrl={logoUrl}
+                    povText={povText}
+                    logoRotation={logoRotation}
+                    logoTintColor={useLogoTint ? logoTintColor : null}
+                    povTextAnimation={povTextAnimation}
+                    effectSpeedRate={effectSpeedRate}
+                    effectScale={effectScale}
+                    effectComplexity={effectComplexity}
+                    videoUrl={synthVideoUrl}
+                    ledCount={state.led.ledsPerStrip}
+                    kaleidoShape={kaleidoShape}
+                    kaleidoLines={kaleidoLines}
+                    kaleidoMorphSpeed={kaleidoMorphSpeed}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent rounded-full pointer-events-none"></div>
+                  <div className="absolute inset-0 shadow-[inset_0_0_80px_rgba(0,0,0,0.8)] pointer-events-none rounded-full"></div>
+                </motion.div>
               </div>
+              
+              <div className="flex justify-center items-center">
+                <Gauge value={rpm} min={0} max={2000} label="RPM" unit=" RPM" colorClass="text-[#00b4d8]" />
+              </div>
+            </div>
 
-              {state.wifi.mode === "STA" && (
-                <div className="flex flex-col gap-3 pt-2 border-t border-slate-800/50 animate-in fade-in duration-500">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">WiFi Network Name (SSID)</label>
-                    <input 
-                      type="text" 
-                      value={staSSID}
-                      onChange={(e) => setStaSSID(e.target.value)}
-                      placeholder="My Home WiFi..."
-                      className="bg-[#050608] border border-slate-800 rounded-xl px-4 py-2.5 text-[12px] text-slate-200 focus:outline-none focus:border-[#38bdf8]"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Password</label>
-                    <input 
-                      type="password" 
-                      value={staPass}
-                      onChange={(e) => setStaPass(e.target.value)}
-                      placeholder="••••••••"
-                      className="bg-[#050608] border border-slate-800 rounded-xl px-4 py-2.5 text-[12px] text-slate-200 focus:outline-none focus:border-[#38bdf8]"
-                    />
-                  </div>
-                  <button 
-                    onClick={handleConnectToSTA}
-                    className="w-full bg-[#38bdf8] hover:bg-[#0ea5e9] text-black py-3 rounded-xl text-[11px] font-bold tracking-widest uppercase transition-all shadow-lg active:scale-95"
-                  >
-                    CONNECT & SYNC / התחבר וסנכרן
-                  </button>
-                </div>
-              )}
-
-              {state.wifi.mode === "AP" && (
-                <div className="flex items-center justify-between p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl">
-                   <div className="flex items-center gap-3">
-                      <Wifi className="w-5 h-5 text-blue-400" />
-                      <div className="flex flex-col">
-                         <span className="text-[11px] font-bold text-slate-300">Default AP Active: {state.wifi.ssid}</span>
-                         <span className="text-[9px] text-slate-500">Pass: {state.wifi.pass} | IP: {state.wifi.ip}</span>
-                      </div>
-                   </div>
-                   {streamData?.rssi !== undefined && streamData.rssi > -100 && (
-                     <div className="flex flex-col items-end gap-1 px-2 border-l border-slate-800/50">
-                        <span className="text-[9px] font-bold text-sky-400 uppercase tracking-widest leading-none">SIGNAL</span>
-                        <div className="flex items-end gap-0.5 h-2">
-                           {[1, 2, 3, 4].map(i => (
-                             <div key={i} className={`w-0.5 rounded-full ${streamData.rssi > -90 + i*10 ? 'bg-sky-400' : 'bg-slate-800'}`} style={{ height: `${i*25}%` }}></div>
-                           ))}
-                        </div>
-                     </div>
-                   )}
-                </div>
-              )}
+            <div className="mx-auto w-full max-w-3xl mb-4 text-center">
+               <HardwareHealth 
+                 apiUrl={state.wifi.mode === "AP" ? "http://192.168.4.1/status" : "/status"} 
+                 externalData={isBluetoothConnected ? streamData : null} 
+               />
             </div>
           </div>
+        );
+      }
 
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-0">
-                LAN DISCOVERY / מכשירים ברשת המקומית
+      if (activeTab === "effects") {
+        return (
+          <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+            <section className="mt-4">
+              <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-3 px-1 text-center font-black">
+                EFFECT LIBRARY / ספריית אפקטים
               </h3>
-              <button 
-                onClick={handleScan}
-                disabled={isScanning}
-                className="text-[10px] font-bold text-[#38bdf8] hover:text-[#0ea5e9] uppercase tracking-widest flex items-center gap-1.5"
-              >
-                <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />
-                {isScanning ? 'SCANNING...' : 'SCAN NOW'}
-              </button>
-            </div>
-
-            {isScanning && (
-              <div className="flex flex-col items-center justify-center py-12 gap-3 border border-dashed border-slate-800 rounded-3xl bg-[#0c0e15]/50 animate-pulse">
-                <div className="p-4 bg-[#38bdf8]/10 rounded-full">
-                  <Search className="w-8 h-8 text-[#38bdf8]" />
-                </div>
-                <span className="text-[12px] font-bold text-slate-400 tracking-widest uppercase">מחפש יחידות HoloSpin ברשת...</span>
-              </div>
-            )}
-
-            {!isScanning && discoveredDevices.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-12 gap-3 border border-dashed border-slate-800 rounded-3xl bg-[#0c0e15]/30">
-                <Monitor className="w-8 h-8 text-slate-800" />
-                <span className="text-[12px] font-bold text-slate-600 tracking-widest uppercase text-center px-6">
-                  לא נמצאו מכשירים פעילים ברשת.<br/>
-                  <span className="text-[10px] font-normal lowercase tracking-normal text-slate-700 mt-2 block">אנא ודא שהסמארטפון והמכשירים נמצאים על אותה רשת WiFi.</span>
-                </span>
-                <button 
-                  onClick={handleScan}
-                  className="mt-2 px-6 py-2 border border-slate-700 rounded-full text-[10px] font-bold text-slate-400 hover:text-white hover:border-[#38bdf8] transition-all"
-                >TRY AGAIN / נסה שוב</button>
-              </div>
-            )}
-
-            {!isScanning && discoveredDevices.length > 0 && (
-              <div className="flex flex-col gap-3 animate-in slide-in-from-top-4 duration-700">
-                {discoveredDevices.map((device) => (
-                  <div 
-                    key={device.id} 
-                    className="border border-[#00b4d8]/20 rounded-2xl p-4 bg-[#0c0e15] flex flex-col gap-3 transition-all hover:border-[#00b4d8]/50 shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-[#00b4d8]/10 text-[#00b4d8] flex items-center justify-center">
-                          <Cpu className="w-5 h-5 shadow-[0_0_10px_rgba(0,180,216,0.5)]" />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-[13px] font-bold text-slate-100">{device.name}</span>
-                          <span className="text-[11px] font-mono text-slate-500">{device.ip}</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_#10b981]"></div>
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-500 leading-none">CONNECTED</span>
-                        </div>
-                        <span className="text-[9px] text-[#38bdf8] font-mono uppercase font-bold tracking-tight bg-[#38bdf8]/10 px-1.5 py-0.5 rounded italic">Signal {device.strength}%</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between pt-3 border-t border-slate-800/50">
-                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Active & Ready</span>
-                       <button className="px-5 py-2 bg-[#00b4d8] hover:bg-[#0096b4] text-black rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(0,180,216,0.2)]">MANAGE DEVICE</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          
-          <div className="bg-[#0c0e15] border border-slate-800/80 rounded-2xl p-5 mb-10 flex gap-4">
-             <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0 border border-amber-500/20">
-                <ShieldCheck className="w-5 h-5 text-amber-500" />
-             </div>
-             <div className="text-[11px] leading-relaxed text-slate-400">
-                <strong className="text-slate-200 block mb-1">אבטחת תקשורת:</strong>
-                החיבור מתבצע תחת הצפנת AES-128 מקומית. ודא שהראוטר שלך מאפשר תקשורת פנימית (Client Isolation = Disabled) כדי שנוכל לזהות את המכשירים המחוברים.
-             </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (activeTab === "library") {
-      return (
-        <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 font-sans">
-          <div className="flex flex-col gap-2 mt-4">
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-1">
-              PRO IMAGE PIPELINE / העלאת תכנים מקצועית
-            </h3>
-            <p className="text-[10px] text-slate-500 leading-relaxed mb-4">
-              Upload an image to convert it into radial slices for 360° holographic projection.
-            </p>
-          </div>
-
-          <HoloSlicer onUpload={handleHoloUpload} />
-
-          <div className="flex items-center justify-between mt-4">
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-0">
-              Cloud Storage / ספריית ענן
-            </h3>
-          </div>
-
-          <AnimatePresence>
-            {showHowItWorks && (
-              <motion.div 
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="bg-[#120d1d] border border-[#a855f7]/30 rounded-2xl p-5 mb-2 flex flex-col gap-4 shadow-[0_0_20px_rgba(168,85,247,0.1)]">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-[#a855f7]/10 rounded-lg">
-                      <Database className="w-5 h-5 text-[#a855f7]" />
-                    </div>
-                    <span className="text-[13px] font-black text-slate-100 tracking-wide">זרימת סנכרון ענן / Cloud Architecture</span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 relative">
-                    {/* Connection Lines */}
-                    <div className="absolute top-[30px] left-[25%] right-[25%] h-[1px] bg-gradient-to-r from-transparent via-[#a855f7]/40 to-transparent"></div>
-                    
-                    <div className="flex flex-col items-center gap-2 text-center">
-                      <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
-                        <Smartphone className="w-5 h-5 text-slate-400" />
-                      </div>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase">App Client</span>
-                    </div>
-
-                    <div className="flex flex-col items-center gap-2 text-center">
-                      <div className="w-12 h-12 rounded-full bg-[#a855f7]/20 flex items-center justify-center border border-[#a855f7]/40 shadow-[0_0_15px_rgba(168,85,247,0.3)] animate-pulse">
-                        <CloudLightning className="w-6 h-6 text-[#a855f7]" />
-                      </div>
-                      <span className="text-[9px] font-bold text-[#a855f7] uppercase">HoloCloud API</span>
-                    </div>
-
-                    <div className="flex flex-col items-center gap-2 text-center">
-                      <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
-                        <Cpu className="w-5 h-5 text-slate-400" />
-                      </div>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase">HoloSpin Unit</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 pt-2 border-t border-slate-800/50">
-                    {[
-                      "העלאה מהנייד לשרת מאובטח (HTTPS/AES).",
-                      "קידוד אוטומטי של התוכן למבנה בינארי המותאם ל-LED.",
-                      "שליחת פקודת דחיפה (Push) לכל המכשירים בחשבון.",
-                      "המכשירים מורידים את התוכן רק כשהם במצב Idle."
-                    ].map((step, i) => (
-                      <div key={i} className="flex gap-2 items-start">
-                        <span className="text-[#a855f7] font-mono text-[10px] mt-0.5">{i+1}.</span>
-                        <p className="text-[10px] text-slate-400 leading-normal">{step}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Storage:</span>
-               <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="w-[60%] h-full bg-[#a855f7]"></div>
-               </div>
-               <span className="text-[9px] font-mono text-slate-400">60%</span>
-            </div>
-          </div>
-
-          <div className="flex gap-2 pb-1 overflow-x-auto no-scrollbar">
-            {['All', 'Video Loops', '3D Objects', 'Text Sets', 'Icons'].map((cat, idx) => (
-              <button 
-                key={cat} 
-                className={`whitespace-nowrap px-4 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all ${idx === 0 ? 'bg-[#a855f7] text-white' : 'bg-[#0c0e15] border border-slate-800 text-slate-500'}`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-             {[
-               { id: 'v1', name: 'Cyber Ring', type: 'Loop', icon: '🌀', size: '1.2MB' },
-               { id: 'v2', name: 'Digital Rain', type: 'Loop', icon: '👾', size: '0.8MB' },
-               { id: 'v3', name: 'Helix DNA', type: '3D', icon: '🧬', size: '2.4MB' },
-               { id: 'v4', name: 'Golden Coin', type: '3D', icon: '💰', size: '1.7MB' },
-               { id: 'v5', name: 'Loading Glow', type: 'Loop', icon: '⚡', size: '0.5MB' },
-               { id: 'v6', name: 'Skull Flame', type: 'Loop', icon: '💀', size: '3.1MB' },
-             ].map(item => (
-               <div key={item.id} className="bg-[#0c0e15] border border-slate-800/80 rounded-2xl p-4 flex flex-col gap-3 group relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <button className="bg-[#a855f7] p-1.5 rounded-lg shadow-lg">
-                        <Upload className="w-3 h-3 text-white" />
-                     </button>
-                  </div>
-                  <div className="w-full aspect-square bg-[#050608] rounded-xl flex items-center justify-center text-4xl shadow-inner border border-slate-800/40">
-                     {item.icon}
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[12px] font-bold text-slate-200 tracking-wide">{item.name}</span>
-                    <div className="flex justify-between items-center">
-                       <span className="text-[9px] text-[#a855f7] font-bold uppercase tracking-tight">{item.type}</span>
-                       <span className="text-[9px] text-slate-600 font-mono uppercase tracking-tight">{item.size}</span>
-                    </div>
-                  </div>
-               </div>
-             ))}
-          </div>
-
-          <div className="border border-slate-800/50 rounded-2xl p-4 bg-slate-900/20 flex flex-col gap-3">
-             <div className="flex items-center gap-3">
-                <Database className="w-5 h-5 text-slate-500" />
-                <span className="text-[12px] font-bold text-slate-300">CLOUD SYNC ACTIVE</span>
-             </div>
-             <p className="text-[10px] text-slate-500 leading-relaxed pl-8">
-               סנכרון הענן פעיל. כל קובץ שתעלו מהנייד יופיע אוטומטית בכל מכשירי ה-HoloSpin שברשותכם תחת החשבון המחובר שלכם.
-             </p>
-          </div>
-        </div>
-      )
-    }
-
-    if (activeTab === "controller") {
-      return (
-        <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
-          <div className="w-full max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-center my-8">
-            <div className="flex justify-center items-center w-full max-w-[280px] aspect-square mx-auto relative">
-              <motion.div
-                className="w-full h-full rounded-full border-[2px] border-slate-800 bg-[#050608] flex items-center justify-center overflow-hidden relative shadow-[0_0_50px_rgba(0,180,216,0.2)]"
-                animate={isApplyingPreset ? { scale: [1, 1.08, 1], rotate: [0, 5, -5, 0], filter: ['brightness(1)', 'brightness(1.8)', 'brightness(1)'] } : { scale: 1, rotate: 0 }}
-                transition={{ duration: 0.8, ease: "easeInOut" }}
-              >
-                <HologramSimulator
-                  effect={activeEffect}
-                  speed={motorSpeed}
-                  brightness={brightness}
-                  logoUrl={logoUrl}
-                  povText={povText}
-                  logoRotation={logoRotation}
-                  logoTintColor={useLogoTint ? logoTintColor : null}
-                  povTextAnimation={povTextAnimation}
-                  effectSpeedRate={effectSpeedRate}
-                  effectScale={effectScale}
-                  effectComplexity={effectComplexity}
-                  videoUrl={synthVideoUrl}
-                  ledCount={state.led.ledsPerStrip}
-                  kaleidoShape={kaleidoShape}
-                  kaleidoLines={kaleidoLines}
-                  kaleidoMorphSpeed={kaleidoMorphSpeed}
-                />
-                {/* Glass Reflection */}
-                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent rounded-full pointer-events-none"></div>
-                <div className="absolute inset-0 shadow-[inset_0_0_80px_rgba(0,0,0,0.8)] pointer-events-none rounded-full"></div>
-              </motion.div>
-            </div>
-            
-            <div className="flex justify-center items-center">
-              <Gauge 
-                  value={rpm} 
-                  min={0} 
-                  max={2000} 
-                  label="RPM" 
-                  unit=" RPM" 
-                  colorClass="text-[#00b4d8]"
-              />
-            </div>
-          </div>
-
-          <div className="mx-auto w-full max-w-3xl mb-8">
-            <HardwareHealth 
-              apiUrl={state.wifi.mode === "AP" ? "http://192.168.4.1/status" : "/status"} 
-              externalData={isBluetoothConnected ? streamData : null} 
-            />
-          </div>
-
-          <section>
-            <div className="flex justify-between items-end mb-3 px-1">
-              <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-0">
-                EFFECTS
-              </h3>
-            </div>
-            <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15]">
-              <div className="grid grid-cols-4 gap-3">
-                {EFFECTS.map((effect) => (
-                  <button
-                    key={effect.id}
-                    onClick={() => {
-                      handleSelectEffect(effect.id);
-                    }}
-                    className={`flex flex-col items-center justify-center h-[90px] rounded-xl border transition-all ${
-                      activeEffect === effect.id
-                        ? "border-[#00b4d8] bg-[#00b4d8]/10 shadow-[0_0_15px_rgba(0,180,216,0.3)]"
-                        : "border-slate-800/80 bg-[#12141a] hover:bg-slate-800/50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-center mb-3 h-8 w-8">
-                      {effect.icon(
-                        activeEffect === effect.id && effect.id === "rainbow"
-                          ? "#fff"
-                          : effect.color,
-                      )}
-                    </div>
-                    <span
-                      className={`text-[9px] font-bold tracking-widest uppercase`}
-                      style={{
-                        color:
-                          activeEffect === effect.id && effect.id === "rainbow"
-                            ? "#fff"
-                            : effect.color,
-                      }}
-                    >
-                      {effect.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {activeEffect === "video_synth" && (
-            <section className="animate-in fade-in slide-in-from-top-2">
-              <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-3 uppercase pl-1">
-                סנכרון וידאו והקרנה / VIDEO SYNTH SELECT & UPLOAD
-              </h3>
-              <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15] flex flex-col gap-4">
-                <div className="text-xs text-slate-300 leading-relaxed font-sans">
-                  <strong>הקרנת וידאו הולוגרפית:</strong> באפשרותך להעלות סרטון קצר משלך או לבחור אחד מסרטוני הבסיס המותאמים להקרנה.
-                </div>
-
-                {/* Video Preset loops */}
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  {VIDEO_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      onClick={() => {
-                        setSynthVideoUrl(preset.url);
-                        safeSaveLocal("synthVideoUrl", preset.url);
-                      }}
-                      className={`py-2.5 px-3 rounded-xl border text-[10px] font-bold tracking-wider transition-all flex flex-col items-center justify-center text-center gap-1 cursor-pointer ${
-                        synthVideoUrl === preset.url
-                          ? "border-[#00b4d8] bg-[#00b4d8]/15 text-white shadow-[0_0_8px_rgba(0,180,216,0.25)]"
-                          : "border-slate-800 bg-slate-900/40 text-slate-400 hover:bg-slate-800"
-                      }`}
-                    >
-                      <span className="text-[10px] font-bold truncate w-full">{preset.name}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* File Uploader */}
-                <div className="mt-1">
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-800 hover:border-[#00b4d8] rounded-2xl py-6 px-4 cursor-pointer transition bg-slate-900/30">
-                    <Video className="w-8 h-8 text-slate-500 mb-2" />
-                    <span className="text-xs font-bold text-slate-300">העלה סרטון קצר / Choose Short Video</span>
-                    <span className="text-[9px] text-slate-500 mt-1">Supports MP4, WebM, MOV. Loaded in-browser.</span>
-                    <input
-                      type="file"
-                      accept="video/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const fileUrl = URL.createObjectURL(file);
-                          setSynthVideoUrl(fileUrl);
-                          safeSaveLocal("synthVideoUrl", fileUrl);
-                        }
-                      }}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                {synthVideoUrl && (
-                  <div className="flex items-center justify-between border border-slate-800/80 bg-slate-950/50 rounded-xl p-3">
-                    <span className="text-[10px] text-slate-400 truncate max-w-[200px]">
-                      Active: {synthVideoUrl.startsWith("blob:") ? "Custom Uploaded Video 🎥" : synthVideoUrl.split("/").pop()}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setSynthVideoUrl(null);
-                        safeRemoveLocal("synthVideoUrl");
-                      }}
-                      className="text-[9px] font-bold tracking-widest text-rose-500 hover:text-rose-400 uppercase"
-                    >
-                      CLEAR VIDEO
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-
-          {(activeEffect === "logo" || activeEffect === "pov_text") && (
-            <section className="animate-in fade-in slide-in-from-top-2">
-              <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-3 uppercase pl-1">
-                {activeEffect === "logo" ? "LOGO SETTINGS" : "TEXT SETTINGS"}
-              </h3>
-              <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15] flex flex-col gap-4">
-                {activeEffect === "logo" && (
-                  <>
-                    <div className="flex flex-col gap-2">
-                      <label className="text-[11px] uppercase tracking-wider text-slate-400">Upload Image File</label>
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        className="text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-[#00b4d8] file:text-black hover:file:bg-[#00b4d8]/80 cursor-pointer"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => setLogoUrl(reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                      />
-                      {logoUrl && (
-                         <img src={logoUrl} className="mt-2 w-16 h-16 object-contain rounded-md border border-slate-700 bg-black/50" />
-                      )}
-                    </div>
-
-                    {/* Logo Manual Rotation Slider */}
-                    <div className="flex flex-col gap-2 border border-slate-800/60 rounded-xl bg-[#050608] p-3">
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-[11px] uppercase tracking-wider text-slate-400">Alignment / Rotation</label>
-                        <span className="text-xs font-mono text-sky-400 font-bold">{logoRotation}°</span>
-                      </div>
-                      <div className="flex items-center gap-4 px-1">
-                        <CustomSlider
-                          value={logoRotation}
-                          onChange={setLogoRotation}
-                          thumbColor="#00b4d8"
-                          trackColor="#1e293b"
-                          min={-180}
-                          max={180}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Tint controls */}
-                    <div className="flex items-center justify-between border border-slate-800/60 rounded-xl bg-[#050608] p-3">
-                      <label className="text-[11px] uppercase tracking-wider text-slate-400">Hologram Color Tint</label>
-                      <Toggle value={useLogoTint} onChange={setUseLogoTint} activeColor="#00b4d8" />
-                    </div>
-
-                    {useLogoTint && (
-                      <div className="flex items-center justify-between border border-slate-800/60 rounded-xl bg-[#050608] p-3 animate-in fade-in slide-in-from-top-1">
-                        <label className="text-[11px] uppercase tracking-wider text-slate-400">Tint Color</label>
-                        <div className="flex items-center gap-2">
-                          <input 
-                            type="color" 
-                            value={logoTintColor} 
-                            onChange={(e) => setLogoTintColor(e.target.value)}
-                            className="w-8 h-8 rounded-lg bg-transparent border border-slate-700 cursor-pointer"
-                          />
-                          <span className="text-xs font-mono text-slate-400 font-bold uppercase">{logoTintColor}</span>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-                {activeEffect === "pov_text" && (
-                  <>
-                    <div className="flex flex-col gap-2">
-                       <label className="text-[11px] uppercase tracking-wider text-slate-400">Custom Text</label>
-                      <input 
-                        type="text" 
-                        value={povText}
-                        onChange={(e) => setPovText(e.target.value)}
-                        className="bg-[#050608] border border-slate-700 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-[#fcd34d] transition-colors"
-                        placeholder="Enter holographic text..."
-                        maxLength={40}
-                      />
-                    </div>
-
-                    {/* POV Text animation selector dropdown */}
-                    <div className="flex flex-col gap-2 border border-slate-800/60 rounded-xl bg-[#050608] p-3">
-                      <label className="text-[11px] uppercase tracking-wider text-slate-400">Entry / Loop Animation</label>
-                      <select
-                        value={povTextAnimation}
-                        onChange={(e) => setPovTextAnimation(e.target.value)}
-                        className="bg-[#0c0e15] border border-slate-700 rounded-lg p-3 text-xs text-white focus:outline-none focus:border-[#fcd34d] transition-colors cursor-pointer"
-                      >
-                        <option value="fade" className="bg-[#0c0e15] text-white">Fade Glow (Smooth Breathing)</option>
-                        <option value="slide" className="bg-[#0c0e15] text-white">Holo Slide (Scanline Shift)</option>
-                        <option value="pulse" className="bg-[#0c0e15] text-white">Tech Pulse (Scale Resonator)</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-              </div>
-            </section>
-          )}
-
-          {activeEffect === "kaleidoscope" && (
-            <section className="animate-in fade-in slide-in-from-top-2">
-              <h3 className="text-[11px] text-[#f43f5e] font-bold tracking-widest mb-3 uppercase pl-1">
-                הגדרות קלידסקופ / KALEIDOSCOPE SETTINGS
-              </h3>
-              <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15] flex flex-col gap-4">
-                
-                {/* 1. Base Shape Selector */}
-                <div className="flex flex-col gap-2">
-                  <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
-                    מבנה גאומטרי בסיסי / Base Geometric Structure
-                  </span>
-                  <div className="grid grid-cols-2 gap-2 mt-1">
-                    {[
-                      { id: "morphing", labelHe: "מורפינג דינמי", labelEn: "Dynamic Morphing" },
-                      { id: "star", labelHe: "כוכב קדוש משונן", labelEn: "Sacred Star" },
-                      { id: "lotus", labelHe: "פרח הלוטוס", labelEn: "Blooming Lotus" },
-                      { id: "gear", labelHe: "גלגל שיניים קריסטלי", labelEn: "Crystalline Gear" },
-                      { id: "snowflake", labelHe: "סמל פתית שלג", labelEn: "Snowflake Deco" },
-                      { id: "nesting", labelHe: "טבעות גביש", labelEn: "Nesting Circles" },
-                    ].map((sh) => (
-                      <button
-                        key={sh.id}
-                        onClick={() => {
-                          setKaleidoShape(sh.id);
-                          safeSaveLocal("holospin_kaleidoShape", sh.id);
-                        }}
-                        className={`py-2.5 px-3 rounded-xl border text-left flex flex-col justify-center transition-all ${
-                          kaleidoShape === sh.id
-                            ? "border-[#f43f5e] bg-[#f43f5e]/10 text-[#f43f5e] shadow-[0_0_10px_rgba(244,63,94,0.25)]"
-                            : "border-slate-800 bg-[#050608] text-slate-400 hover:bg-slate-800/50"
-                        }`}
-                      >
-                        <span className="text-xs font-bold leading-tight">{sh.labelHe}</span>
-                        <span className="text-[9px] opacity-70 tracking-wide font-mono mt-0.5">{sh.labelEn}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 2. Line & Webbing Styles */}
-                <div className="flex flex-col gap-2 border-t border-slate-800/60 pt-3">
-                  <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
-                    סגנון קווים ומרקם / Line & Texture Style
-                  </span>
-                  <div className="grid grid-cols-2 gap-2 mt-1">
-                    {[
-                      { id: "hybrid", labelHe: "פירוק תלת-שכבתי משולב", labelEn: "Triple Layer Fusion" },
-                      { id: "beams", labelHe: "קרני לייזר בוהקות", labelEn: "Laser Solid Beams" },
-                      { id: "webbing", labelHe: "קורי רשת גאומטריים", labelEn: "Geometric Tech Webbing" },
-                      { id: "dots", labelHe: "נקודות גביש מנצנצות", labelEn: "Shimmering Particles" },
-                    ].map((ln) => (
-                      <button
-                        key={ln.id}
-                        onClick={() => {
-                          setKaleidoLines(ln.id);
-                          safeSaveLocal("holospin_kaleidoLines", ln.id);
-                        }}
-                        className={`py-2.5 px-3 rounded-xl border text-left flex flex-col justify-center transition-all ${
-                          kaleidoLines === ln.id
-                            ? "border-[#f43f5e] bg-[#f43f5e]/10 text-[#f43f5e] shadow-[0_0_10px_rgba(244,63,94,0.25)]"
-                            : "border-slate-800 bg-[#050608] text-slate-400 hover:bg-slate-800/50"
-                        }`}
-                      >
-                        <span className="text-xs font-bold leading-tight">{ln.labelHe}</span>
-                        <span className="text-[9px] opacity-70 tracking-wide font-mono mt-0.5">{ln.labelEn}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 3. Shape Morphing Velocity slider */}
-                <div className="flex flex-col gap-2 border-t border-slate-800/60 pt-3">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
-                      קצב שינוי צורות ומרקם / Morph & Shifting Speed
-                    </span>
-                    <span className="text-xs font-mono text-[#f43f5e] font-bold">
-                      {kaleidoMorphSpeed === 0 ? "סטטי / STATIC" : `${kaleidoMorphSpeed}x`}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4 px-1">
-                    <CustomSlider
-                      value={kaleidoMorphSpeed}
-                      onChange={(val: number) => {
-                        setKaleidoMorphSpeed(val);
-                        safeSaveLocal("holospin_kaleidoMorphSpeed", String(val));
-                      }}
-                      thumbColor="#f43f5e"
-                      trackColor="#1e293b"
-                      min={0}
-                      max={4}
-                      step={0.1}
-                    />
-                  </div>
-                  <span className="text-[10px] text-slate-500 italic leading-snug">
-                    * מגביר את מהירות המורפינג והערבול של מראות קלידסקופ בזמן אמת כדי ליצור צורות אינסופיות בצורה חלקה ובוהקת.
-                  </span>
-                </div>
-
-              </div>
-            </section>
-          )}
-
-          <section>
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-3 uppercase pl-1">
-              POWER
-            </h3>
-            <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15] grid grid-cols-2 gap-4">
-              <button className="flex items-center justify-center gap-2 py-4 rounded-xl border border-[#166534] bg-[#062c16] text-[#22c55e] transition-all hover:bg-[#062c16]/80 shadow-[0_0_15px_rgba(34,197,94,0.1)]">
-                <Power className="w-5 h-5 stroke-[2.5]" />
-                <span className="text-xs font-bold tracking-widest">
-                  POWER ON
-                </span>
-              </button>
-              <button className="flex items-center justify-center gap-2 py-4 rounded-xl border border-[#991b1b] bg-[#380c10] text-[#ef4444] transition-all hover:bg-[#380c10]/80 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
-                <Power className="w-5 h-5 stroke-[2.5]" />
-                <span className="text-xs font-bold tracking-widest">
-                  POWER OFF
-                </span>
-              </button>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-3 uppercase pl-1">
-              BRIGHTNESS
-            </h3>
-            <div className="border border-slate-800/80 rounded-2xl p-5 bg-[#0c0e15] flex items-center gap-4">
-              <Sun className="w-6 h-6 text-[#38bdf8]" />
-              <CustomSlider
-                value={brightness}
-                onChange={setBrightness}
-                thumbColor="#38bdf8"
-                trackColor="#1e293b"
-              />
-              <span className="text-[#38bdf8] font-bold w-10 text-right text-sm">
-                {brightness}
-              </span>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-3 uppercase pl-1">
-              MOTOR SPEED
-            </h3>
-            <div className="border border-slate-800/80 rounded-2xl p-5 bg-[#0c0e15] flex items-center gap-4">
-              <Target className="w-6 h-6 text-[#a855f7]" />
-              <CustomSlider
-                value={motorSpeed}
-                onChange={setMotorSpeed}
-                thumbColor="#a855f7"
-                trackColor="#1e293b"
-              />
-              <span className="text-[#a855f7] font-bold w-10 text-right text-sm">
-                {motorSpeed}
-              </span>
-            </div>
-          </section>
-
-          <button
-            id="btn-update-effects"
-            onClick={() => {
-              safeSaveLocal("holospin_activeEffect", activeEffect);
-              safeSaveLocal("holospin_brightness", String(brightness));
-              safeSaveLocal("holospin_motorSpeed", String(motorSpeed));
-              safeSaveLocal("holospin_effectScale", String(effectScale));
-              safeSaveLocal("holospin_effectComplexity", String(effectComplexity));
-              safeSaveLocal("holospin_effectSpeedRate", String(effectSpeedRate));
-              if (logoUrl) safeSaveLocal("holospin_logoUrl", logoUrl);
-              safeSaveLocal("holospin_povText", povText);
-              safeSaveLocal("holospin_logoRotation", String(logoRotation));
-              safeSaveLocal("holospin_useLogoTint", String(useLogoTint));
-              safeSaveLocal("holospin_logoTintColor", logoTintColor);
-              safeSaveLocal("holospin_povTextAnimation", povTextAnimation);
-              if (synthVideoUrl) {
-                safeSaveLocal("synthVideoUrl", synthVideoUrl);
-              }
-              setToastMessage("Hologram state updated & confirmed! / הגדרות האפקט עודכנו בהצלחה!");
-            }}
-            className="w-full bg-[#00b4d8] hover:bg-[#0096b4] text-white py-4 rounded-xl text-[11.5px] font-bold tracking-widest uppercase shadow-[0_0_15px_rgba(0,180,216,0.3)] transition cursor-pointer active:scale-95 flex items-center justify-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            עדכן והחל שינויים / CONFIRM & UPDATE EFFECT
-          </button>
-
-          <section>
-            <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15] flex justify-between divide-x divide-slate-800/80">
-              <div className="flex flex-col items-center flex-1 px-1">
-                <div className="flex items-center gap-1.5 mb-1 text-slate-400">
-                  <RefreshCw className="w-3 h-3 text-[#38bdf8]" />
-                  <span className="text-[9px] font-bold tracking-widest">
-                    SPEED
-                  </span>
-                </div>
-                <div className="text-[18px] font-medium text-[#38bdf8] leading-tight mt-1">
-                  1200
-                </div>
-                <div className="text-[9px] text-[#38bdf8] tracking-widest mt-0.5">
-                  RPM
-                </div>
-              </div>
-              <div className="flex flex-col items-center flex-1 px-1">
-                <div className="flex items-center gap-1.5 mb-1 text-slate-400">
-                  <Target className="w-3 h-3 text-[#22c55e]" />
-                  <span className="text-[9px] font-bold tracking-widest">
-                    SYNC
-                  </span>
-                </div>
-                <div className="text-[18px] font-medium text-[#22c55e] leading-tight mt-1">
-                  100%
-                </div>
-                <div className="text-[9px] text-[#22c55e] tracking-widest mt-0.5">
-                  PERFECT
-                </div>
-              </div>
-              <div className="flex flex-col items-center flex-1 px-1">
-                <div className="flex items-center gap-1.5 mb-1 text-slate-400">
-                  <Thermometer className="w-3 h-3 text-[#00b4d8]" />
-                  <span className="text-[9px] font-bold tracking-widest">
-                    TEMP
-                  </span>
-                </div>
-                <div className="text-[18px] font-medium text-[#00b4d8] leading-tight mt-1">
-                  34°C
-                </div>
-                <div className="text-[9px] text-[#00b4d8] tracking-widest mt-0.5">
-                  NORMAL
-                </div>
-              </div>
-              <div className="flex flex-col items-center flex-1 px-1">
-                <div className="flex items-center gap-1.5 mb-1 text-slate-400">
-                  <Zap className="w-3 h-3 text-[#a855f7]" />
-                  <span className="text-[9px] font-bold tracking-widest">
-                    VOLTAGE
-                  </span>
-                </div>
-                <div className="text-[18px] font-medium text-[#a855f7] leading-tight mt-1">
-                  24.1V
-                </div>
-                <div className="text-[9px] text-[#a855f7] tracking-widest mt-0.5">
-                  STABLE
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      );
-    }
-
-    if (activeTab === "calibration") {
-      return (
-        <div className="pb-28 animate-in fade-in slide-in-from-bottom-4">
-          <CalibrationPanel 
-            config={calibrationConfig} 
-            telemetry={streamData} 
-            onUpdate={handleCalibrationUpdate} 
-          />
-        </div>
-      );
-    }
-
-    if (activeTab === "settings") {
-      return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4">
-          <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-1 uppercase pl-1">
-            SETTINGS
-          </h3>
-          <div className="border border-slate-800/80 rounded-2xl bg-[#0c0e15] overflow-hidden flex flex-col">
-            <SettingsRow
-              onClick={() => setSubPage("wifi")}
-              icon={<Wifi className="w-5 h-5" />}
-              title="WiFi Settings"
-              subtitle="Holospin_POV2"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("led")}
-              icon={<Sun className="w-5 h-5" />}
-              title="LED Settings"
-              subtitle="Strips, Pins, Brightness, Order"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("motor")}
-              icon={<Settings className="w-5 h-5" />}
-              title="Motor Settings"
-              subtitle="Motor Pin, Frequency, Max Speed"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("pov")}
-              icon={<Target className="w-5 h-5" />}
-              title="POV Settings"
-              subtitle="Columns, Direction, Calibration"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("sync")}
-              icon={<Zap className="w-5 h-5" />}
-              title="Sync & Sensor"
-              subtitle="Sensor Pin, Hall Sensor"
-              rightWidget={
-                <div className="flex items-center gap-2 mr-1">
-                  <span className="text-[11px] font-bold tracking-widest text-[#22c55e]">
-                    OK
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-slate-600" />
-                </div>
-              }
-            />
-            <SettingsRow
-              onClick={() => setSubPage("firmware")}
-              icon={<Download className="w-5 h-5" />}
-              title="Firmware Setup"
-              subtitle="Generate .ino & .h code"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("power")}
-              icon={<Power className="w-5 h-5" />}
-              title="Power Settings"
-              subtitle="Voltage Limit, Current Limit"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("save_load")}
-              icon={<Database className="w-5 h-5" />}
-              title="Save / Load Profile"
-              subtitle="Manage your profiles"
-            />
-            <SettingsRow
-              onClick={handleRunDiagnostics}
-              icon={<ShieldCheck className="w-5 h-5" />}
-              title="Hardware Diagnostics"
-              subtitle="Test Hall Sensor, LEDs & Motor"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("advanced")}
-              icon={<Settings className="w-5 h-5" />}
-              title="Advanced Settings"
-              subtitle="Developer and advanced options"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("background")}
-              icon={<Globe className="w-5 h-5" />}
-              title="Background Style"
-              subtitle="Choose the app background"
-            />
-            <SettingsRow
-              onClick={() => setSubPage("media")}
-              icon={<Image className="w-5 h-5 text-[#00b4d8]" />}
-              title="Media & Files Upload / העלאת מדיה וקבצים"
-              subtitle="Upload custom hologram logos, images, or video loops"
-            />
-          </div>
-
-          <div className="border border-slate-800/80 rounded-2xl bg-[#0c0e15] p-5 mt-4 flex items-center justify-between">
-            <div className="flex flex-col">
-              <span className="text-[13px] text-slate-200 tracking-wide font-bold">
-                High Contrast Light Mode
-              </span>
-              <span className="text-[10px] text-slate-400">
-                מצב ניגודיות גבוהה לסביבה מוארת
-              </span>
-            </div>
-            <Toggle
-              value={isLightMode}
-              activeColor="#00b4d8"
-              onChange={(v: boolean) => {
-                setIsLightMode(v);
-                safeSaveLocal("isLightMode", String(v));
-              }}
-            />
-          </div>
-        </div>
-      );
-    }
-
-    if (activeTab === "about") {
-      const opt = OPTIMAL_SPEEDS[activeEffect] || { speed: 80, label: "80 RPM", explanation: "Default sync speed for Persistence of Vision drawing stability." };
-      const isCalibrated = motorSpeed === opt.speed;
-
-      return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4">
-          
-          {/* Top Holographic Display Unit */}
-          <div className="flex flex-col items-center mt-2">
-            <motion.div 
-              className="w-[160px] h-[160px] rounded-full flex items-center justify-center relative mb-2 bg-[#020306]/90 border border-slate-800 shadow-[0_0_40px_rgba(0,180,216,0.15)]"
-              animate={isApplyingPreset ? { scale: [1, 1.1, 1], filter: ['brightness(1)', 'brightness(1.5)', 'brightness(1)'] } : {}}
-              transition={{ duration: 0.8 }}
-            >
-              <HologramSimulator
-                effect={activeEffect}
-                speed={motorSpeed}
-                brightness={brightness}
-                logoUrl={logoUrl}
-                povText={povText}
-                logoRotation={logoRotation}
-                logoTintColor={useLogoTint ? logoTintColor : null}
-                povTextAnimation={povTextAnimation}
-                effectSpeedRate={effectSpeedRate}
-                effectScale={effectScale}
-                effectComplexity={effectComplexity}
-                videoUrl={synthVideoUrl}
-                ledCount={state.led.ledsPerStrip}
-                kaleidoShape={kaleidoShape}
-                kaleidoLines={kaleidoLines}
-                kaleidoMorphSpeed={kaleidoMorphSpeed}
-              />
-              {/* Glass Reflection */}
-              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent rounded-full pointer-events-none"></div>
-              <div className="absolute inset-0 shadow-[inset_0_0_60px_rgba(0,0,0,0.85)] pointer-events-none rounded-full"></div>
-            </motion.div>
-            
-            <div className="text-center">
-              <span className="text-[10px] text-sky-400 font-bold tracking-widest uppercase">
-                Active Hologram Calibration
-              </span>
-            </div>
-          </div>
-
-          {/* Quick Effect Selection Panel */}
-          <section>
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-2 uppercase pl-1">
-              שריון ובחירת אפקטים / CHOOSE EFFECT
-            </h3>
-            <div className="grid grid-cols-4 gap-1.5 p-2 border border-slate-800/80 rounded-2xl bg-[#0c0e15]/90">
-              {EFFECTS.map((eff) => {
-                const isActive = activeEffect === eff.id;
-                return (
+              <div className="grid grid-cols-4 gap-3 bg-[#0c0e15]/80 p-4 rounded-3xl border border-slate-800/50">
+                {EFFECTS.map((eff) => (
                   <button
                     key={eff.id}
-                    onClick={() => {
-                      handleSelectEffect(eff.id);
-                    }}
-                    className={`flex flex-col items-center gap-1 py-1.5 px-1 rounded-xl border transition-all ${
-                      isActive
-                        ? "bg-[#0a2540]/60 border-[#00b4d8] text-white shadow-[0_0_10px_rgba(0,180,216,0.15)]"
-                        : "bg-black/40 border-slate-800/50 text-slate-400 hover:text-slate-200 hover:border-slate-700/50"
+                    onClick={() => handleSelectEffect(eff.id)}
+                    className={`flex flex-col items-center justify-center py-3 px-1 rounded-2xl border transition-all ${
+                      activeEffect === eff.id
+                        ? "border-[#00b4d8] bg-[#00b4d8]/10 shadow-[0_0_15px_rgba(0,180,216,0.2)] scale-[1.02]"
+                        : "border-transparent bg-slate-900/40 hover:bg-slate-800/50"
                     }`}
                   >
-                    <div className="scale-[0.7] opacity-90 transition-transform">
-                      {eff.icon(isActive ? eff.color : "#475569")}
+                    <div className="mb-2 h-7 w-7 flex items-center justify-center">
+                      {eff.icon(activeEffect === eff.id ? eff.color : "#475569")}
                     </div>
-                    <span className="text-[8px] font-bold tracking-wider select-none truncate max-w-full uppercase">
+                    <span className="text-[7.5px] font-black tracking-widest uppercase text-slate-400"
+                          style={{ color: activeEffect === eff.id ? eff.color : undefined }}>
                       {eff.label}
                     </span>
                   </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* Optimal POV Speed Synchronization */}
-          <section>
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-2 uppercase pl-1">
-              מהירות רוטור אופטימלית / OPTIMAL ROTATION
-            </h3>
-            <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15]/90 flex flex-col gap-3.5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold tracking-wide uppercase text-white">
-                    {EFFECTS.find(e => e.id === activeEffect)?.label || "Active Color"}
-                  </h4>
-                  <p className="text-[10px] text-slate-500 font-mono font-bold mt-0.5">
-                    Recommended: {opt.label}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">Status:</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isCalibrated ? "bg-emerald-950/60 text-emerald-400 border border-emerald-500/30" : "bg-amber-950/60 text-amber-400 border border-amber-500/30"}`}>
-                    {isCalibrated ? "CALIBRATED" : "DRIP MISMATCH"}
-                  </span>
-                </div>
+                ))}
               </div>
+            </section>
 
-              <div className="p-3 rounded-lg bg-[#050608] border border-slate-800/50 text-[11px] text-slate-400 leading-relaxed font-sans">
-                💡 <span className="font-semibold text-slate-300">הסבר טכנולוגי:</span> {opt.explanation}
-              </div>
+            <section className="bg-[#0c0e15]/50 border border-slate-800/50 rounded-3xl p-6 relative overflow-hidden backdrop-blur-sm">
+               <h3 className="text-[11px] text-[#0ea5e9] font-black tracking-widest uppercase mb-4 text-center">
+                  UPLOAD NEW CONTENT / העלאת תוכן
+               </h3>
+               <HoloSlicer onUpload={handleHoloUpload} />
+            </section>
 
-              {isCalibrated ? (
-                <div className="w-full py-3 px-4 rounded-xl border border-emerald-500/30 bg-emerald-950/40 text-emerald-400 font-bold tracking-widest text-[10px] flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
-                  סנכרון מושלם: {opt.speed} RPM (100% PERSISTENCE)
-                </div>
-              ) : (
-                <button
-                  onClick={() => setMotorSpeed(opt.speed)}
-                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-teal-500/30 bg-teal-950/45 hover:bg-teal-900/60 text-teal-300 font-bold tracking-widest text-[10px] transition-all duration-300 hover:shadow-[0_0_15px_rgba(20,184,166,0.2)] active:scale-[0.98]"
-                >
-                  <Zap className="w-4 h-4 text-teal-400 stroke-[2.5] animate-pulse" />
-                  סנכרן למהירות מנוע אופטימלית ({opt.speed} RPM)
-                </button>
-              )}
-            </div>
-          </section>
-
-          {/* Micro Geometric Adjustments */}
-          <section>
-            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-2 uppercase pl-1">
-              הגדרות מתקדמות לאפקט / EFFECT ADVANCED MODIFIERS
-            </h3>
-            <div className="border border-slate-800/80 rounded-2xl p-4 bg-[#0c0e15]/90 flex flex-col gap-4">
-              
-              {/* Parameter 1: Speed Rate */}
-              <div className="flex flex-col gap-1">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">קצב התקדמות פנימי / Playback Time</span>
-                  <span className="text-xs font-mono font-bold text-[#00b4d8]">
-                    {isSyncSpeedRate ? `Synced (x${(effectSpeedRate || 1.0).toFixed(1)})` : `x${(effectSpeedRate || 1.0).toFixed(1)}`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4">
+            {/* Advanced Modifiers Section */}
+            <section>
+              <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-3 uppercase pl-1 text-center font-black">
+                ADVANCED MODIFIERS / הגדרות מתקדמות
+              </h3>
+              <div className="border border-slate-800/80 rounded-3xl p-6 bg-[#0c0e15]/60 flex flex-col gap-6 backdrop-blur-md">
+                
+                {/* Speed Rate */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Playback Time</span>
+                    <span className="text-[11px] font-mono text-[#00b4d8] font-bold">
+                      x{(effectSpeedRate || 1.0).toFixed(1)}
+                    </span>
+                  </div>
                   <CustomSlider
                     value={Math.round((effectSpeedRate - 0.2) / 2.8 * 255)}
-                    disabled={isSyncSpeedRate}
                     onChange={(v: number) => {
-                      if (isSyncSpeedRate) return;
                       const computedVal = 0.2 + (v / 255) * 2.8;
                       setEffectSpeedRate(computedVal);
                     }}
-                    thumbColor={isSyncSpeedRate ? "#475569" : "#00b4d8"}
+                    thumbColor="#00b4d8"
                     trackColor="#1e293b"
                   />
                 </div>
-                
-                <div className="flex items-center justify-between bg-slate-950/40 p-2 border border-slate-800/40 rounded-xl my-1">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-slate-200 font-semibold leading-tight">סנכרן עם סיבובי מנוע / Sync Animation with Motor RPM</span>
-                    <span className="text-[8px] text-slate-500">שומר על זרימה ויזואלית עקבית בהתאם למהירות הסיבוב</span>
-                  </div>
-                  <Toggle
-                    value={isSyncSpeedRate}
-                    activeColor="#22c55e"
-                    onChange={(v: boolean) => {
-                      setIsSyncSpeedRate(v);
-                      safeSaveLocal("isSyncSpeedRate", String(v));
-                    }}
-                  />
-                </div>
-                <span className="text-[9px] text-slate-500">שולט במהירות של תנועת הגרפיקה בלי קשר למהירות המאוורר הפיזי.</span>
-              </div>
 
-              {/* Parameter 2: Scale */}
-              <div className="flex flex-col gap-1 border-t border-slate-900 pt-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">קנה מידה וגודל / Radial Scale</span>
-                  <span className="text-xs font-mono font-bold text-pink-400">{Math.round(effectScale * 100)}%</span>
-                </div>
-                <div className="flex items-center gap-4">
+                {/* Scale */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Radial Scale</span>
+                    <span className="text-[11px] font-mono text-pink-400 font-bold">{Math.round(effectScale * 100)}%</span>
+                  </div>
                   <CustomSlider
                     value={Math.round((effectScale - 0.5) / 1.0 * 255)}
                     onChange={(v: number) => {
@@ -4756,16 +3752,13 @@ void loop()
                     trackColor="#1e293b"
                   />
                 </div>
-                <span className="text-[9px] text-slate-500">מגדיל או מקטין את ההקרנה בטווח העליון של המניפה.</span>
-              </div>
 
-              {/* Parameter 3: Complexity */}
-              <div className="flex flex-col gap-1 border-t border-slate-900 pt-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">מורכבות ורמת פירוט / Complexity Layers</span>
-                  <span className="text-xs font-mono font-bold text-amber-400">{Math.round(effectComplexity)} Facets</span>
-                </div>
-                <div className="flex items-center gap-4">
+                {/* Complexity */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Complexity Layers</span>
+                    <span className="text-[11px] font-mono text-amber-400 font-bold">{Math.round(effectComplexity)}</span>
+                  </div>
                   <CustomSlider
                     value={Math.round((effectComplexity - 3) / 13 * 255)}
                     onChange={(v: number) => {
@@ -4776,21 +3769,63 @@ void loop()
                     trackColor="#1e293b"
                   />
                 </div>
-                <span className="text-[9px] text-slate-500">שינוי מספר העמודות, הקלידוסקופים, פריסות הגרפיקה, או כמות הכוכבים בפריסה.</span>
+
               </div>
+            </section>
 
+            <button
+              onClick={() => {
+                setToastMessage("Settings Updated! / הגדרות עודכנו בהצלחה!");
+              }}
+              className="w-full bg-[#00b4d8] hover:bg-[#0096b4] text-white py-4 rounded-2xl text-[11.5px] font-black tracking-widest uppercase shadow-[0_0_20px_rgba(0,180,216,0.3)] transition active:scale-95 flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              CONFIRM & UPDATE EFFECT
+            </button>
+          </div>
+        );
+      }
+
+      if (activeTab === "settings") {
+        return (
+          <div className="px-5 pt-2 pb-28 flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4">
+            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-1 uppercase pl-1 text-center font-black">
+              SYSTEM CONFIG / הגדרות מערכת
+            </h3>
+            
+            <div className="border border-slate-800 bg-[#0c0e15] rounded-3xl p-6 flex flex-col gap-6 shadow-2xl">
+               <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center px-1">
+                     <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Motor Speed</span>
+                     <span className="text-[11px] font-mono text-[#a855f7] font-bold">{motorSpeed} RPM</span>
+                  </div>
+                  <CustomSlider value={motorSpeed} onChange={setMotorSpeed} thumbColor="#a855f7" trackColor="#0f172a" />
+               </div>
+               <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center px-1">
+                     <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">LED Brightness</span>
+                     <span className="text-[11px] font-mono text-[#fbbf24] font-bold">{brightness}%</span>
+                  </div>
+                  <CustomSlider value={brightness} onChange={setBrightness} thumbColor="#fbbf24" trackColor="#0f172a" />
+               </div>
             </div>
-          </section>
 
-          {/* Quick System Restart Row (re-used for tech consistency) */}
-          <button className="w-full bg-[#161d2a] hover:bg-slate-800 text-slate-400 py-3 rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2 border border-slate-800">
-            <RefreshCw className="w-4 h-4 animate-spin-slow text-slate-400" />
-            אתחול פרוטוקול הקרנת העדשה / REBOOT PROJECTION SYSTEM
-          </button>
-        </div>
-      );
-    }
-  };
+            <div className="border border-slate-800/80 rounded-3xl bg-[#0c0e15]/60 overflow-hidden flex flex-col backdrop-blur-md shadow-lg">
+              <SettingsRow onClick={() => setSubPage("wifi")} icon={<Wifi className="w-5 h-5 text-sky-400" />} title="WiFi Settings" subtitle={state.wifi.ssid || "Disconnected"} />
+              <SettingsRow onClick={() => setSubPage("calibration")} icon={<Target className="w-5 h-5 text-teal-400" />} title="Calibration" subtitle="Angle & Timing" />
+              <SettingsRow onClick={() => setSubPage("firmware")} icon={<Download className="w-5 h-5 text-emerald-400" />} title="Firmware" subtitle="Update POV Core" />
+              <SettingsRow onClick={() => setSubPage("power")} icon={<Power className="w-5 h-5 text-rose-500" />} title="Power Management" subtitle="Battery & Voltage" />
+              <SettingsRow onClick={() => setSubPage("background")} icon={<Image className="w-5 h-5 text-indigo-400" />} title="Background Style" subtitle="Change App Theme" />
+            </div>
+            
+            <button onClick={handleRunDiagnostics} className="w-full bg-slate-800/40 border border-slate-700/50 py-4 rounded-2xl text-[10px] font-black tracking-widest text-slate-300 flex items-center justify-center gap-3 hover:bg-slate-800/60 transition shadow-inner">
+               <ShieldCheck className="w-4 h-4 text-blue-400" />
+               HARDWARE DIAGNOSTICS TEST
+            </button>
+          </div>
+        );
+      }
+    };
 
   if (showSplash) {
     return (
@@ -4882,25 +3917,25 @@ void loop()
             className={`w-6 h-6 transition-colors ${activeTab === "controller" ? "text-[#00b4d8]" : "text-slate-500 hover:text-slate-400"}`}
           />
           <span
-            className={`text-[9px] font-bold tracking-widest ${activeTab === "controller" ? "text-[#00b4d8]" : "text-slate-500"}`}
+            className={`text-[9px] font-black tracking-widest ${activeTab === "controller" ? "text-[#00b4d8]" : "text-slate-500"}`}
           >
-            MAIN
+            CONTROLLER
           </span>
         </button>
         <button
           onClick={() => {
-            setActiveTab("calibration");
+            setActiveTab("effects");
             setSubPage(null);
           }}
           className="flex flex-col items-center gap-1.5 focus:outline-none transition-transform active:scale-95"
         >
-          <Target
-            className={`w-6 h-6 transition-colors ${activeTab === "calibration" ? "text-[#00b4d8]" : "text-slate-500 hover:text-slate-400"}`}
+          <Aperture
+            className={`w-6 h-6 transition-colors ${activeTab === "effects" ? "text-[#00b4d8] animate-spin-slow" : "text-slate-500 hover:text-slate-400"}`}
           />
           <span
-            className={`text-[9px] font-bold tracking-widest ${activeTab === "calibration" ? "text-[#00b4d8]" : "text-slate-500"}`}
+            className={`text-[9px] font-black tracking-widest ${activeTab === "effects" ? "text-[#00b4d8]" : "text-slate-500"}`}
           >
-            SYNC
+            EFFECTS
           </span>
         </button>
         <button
@@ -4914,25 +3949,9 @@ void loop()
             className={`w-6 h-6 transition-colors ${activeTab === "settings" ? "text-[#00b4d8]" : "text-slate-500 hover:text-slate-400"}`}
           />
           <span
-            className={`text-[9px] font-bold tracking-widest ${activeTab === "settings" ? "text-[#00b4d8]" : "text-slate-500"}`}
+            className={`text-[9px] font-black tracking-widest ${activeTab === "settings" ? "text-[#00b4d8]" : "text-slate-500"}`}
           >
             SETTINGS
-          </span>
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab("about");
-            setSubPage(null);
-          }}
-          className="flex flex-col items-center gap-1.5 focus:outline-none transition-transform active:scale-95"
-        >
-          <Aperture
-            className={`w-6 h-6 transition-colors ${activeTab === "about" ? "text-[#00b4d8] animate-spin-slow" : "text-slate-500 hover:text-slate-400"}`}
-          />
-          <span
-            className={`text-[9px] font-bold tracking-widest ${activeTab === "about" ? "text-[#00b4d8]" : "text-slate-500"}`}
-          >
-            EFFECTS
           </span>
         </button>
       </nav>
