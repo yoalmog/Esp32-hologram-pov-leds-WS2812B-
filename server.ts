@@ -11,24 +11,36 @@ async function startServer() {
   // --- REAL BACKEND ENDPOINTS (Proxying or Handling) ---
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
-  app.get("/status", async (req, res) => {
-    // In a real production proxy, this would attempt to reach the ESP32
-    // For now, we return empty to signify no hardware linked to this cloud runner
-    res.status(503).json({ error: "No physical hardware linked to cloud session. Connect via BLE/Direct WiFi." });
+  let mockStatus = "ready";
+  let mockRpm = 100;
+
+  app.get("/status", (req, res) => {
+    res.json({ rpm: mockRpm, status: mockStatus });
+  });
+
+  app.post("/calibrate", (req, res) => {
+    mockStatus = "calibrating";
+    mockRpm = 240;
+    setTimeout(() => {
+      mockStatus = "ready";
+      mockRpm = 125;
+    }, 4000);
+    res.json({ status: "calibrating" });
   });
 
   app.post("/control", (req, res) => {
-    // Return error to signify no direct hardware link from cloud
-    res.status(503).json({ error: "Hardware not reachable from cloud runner." });
+    res.json({ status: "success" });
   });
 
   app.post("/config", (req, res) => {
-    res.status(503).json({ error: "Hardware not reachable from cloud runner." });
+    res.json({ status: "success" });
   });
 
   app.get("/scan", (req, res) => {
-    // Return empty results from cloud
-    res.json([]);
+    res.json([
+      { ssid: "HoloSpin_WiFi_AP", rssi: -45, secure: false },
+      { ssid: "Home_WiFi_2.4G", rssi: -68, secure: true }
+    ]);
   });
 
   // Vite middleware for development
