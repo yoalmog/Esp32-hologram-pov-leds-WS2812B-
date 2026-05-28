@@ -8,9 +8,27 @@ async function startServer() {
 
   app.use(express.json());
 
-  // API Routes
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+  // --- REAL BACKEND ENDPOINTS (Proxying or Handling) ---
+  app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+  app.get("/status", async (req, res) => {
+    // In a real production proxy, this would attempt to reach the ESP32
+    // For now, we return empty to signify no hardware linked to this cloud runner
+    res.status(503).json({ error: "No physical hardware linked to cloud session. Connect via BLE/Direct WiFi." });
+  });
+
+  app.post("/control", (req, res) => {
+    // Return error to signify no direct hardware link from cloud
+    res.status(503).json({ error: "Hardware not reachable from cloud runner." });
+  });
+
+  app.post("/config", (req, res) => {
+    res.status(503).json({ error: "Hardware not reachable from cloud runner." });
+  });
+
+  app.get("/scan", (req, res) => {
+    // Return empty results from cloud
+    res.json([]);
   });
 
   // Vite middleware for development

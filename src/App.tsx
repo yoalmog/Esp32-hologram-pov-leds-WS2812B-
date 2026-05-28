@@ -9,7 +9,9 @@ import { Filesystem } from '@capacitor/filesystem';
 import { usePermissions } from "./hooks/usePermissions";
 import { useHardwareStream } from "./hooks/useHardwareStream";
 import { PermissionsManager } from "./components/PermissionsManager";
+import { CalibrationPanel } from "./components/CalibrationPanel";
 
+import { HoloSlicer } from "./components/HoloSlicer";
 import {
   Menu,
   Wifi,
@@ -732,6 +734,33 @@ export default function App() {
   };
 
   const [activeTab, setActiveTab] = useState("controller");
+  const [calibrationConfig, setCalibrationConfig] = useState({
+    phaseOffset: 180.0,
+    angularCorrection: 0.0,
+    gamma: 2.2,
+    pattern: "none"
+  });
+
+  const handleCalibrationUpdate = async (key: string, val: any) => {
+    setCalibrationConfig(prev => ({ ...prev, [key]: val }));
+    
+    const payload = { [key]: val };
+    
+    if (isBluetoothConnected && activeBleId) {
+      await sendCommand({ category: "calibrate", update: payload });
+    } else if (isConnected) {
+      try {
+        const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/calibrate" : "/calibrate";
+        await fetch(targetUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.error("Calibration sync failed", err);
+      }
+    }
+  };
   const [subPage, setSubPage] = useState<string | null>(null);
   const [bgImageId, setBgImageId] = useState("video2");
 
@@ -961,46 +990,42 @@ export default function App() {
   const handleScan = async () => {
     setIsScanning(true);
     setDiscoveredDevices([]);
+    const bleDevices: any[] = [];
     
     try {
-      // 1. Check network connection type
-      const status = await Network.getStatus();
-      
-      const devices = [];
-      if (status.connected && status.connectionType === 'wifi') {
-        // Here you would normally do an mDNS scan or subnet ARP pinging.
-        // For standard permissions without custom mDNS plugins, we query the gateway/local IPs if possible.
-        // As a fallback for true HW, we indicate scanning is listening on network.
-      }
-
-      // 2. Perform Real BLE Scan
-      let bleDevices: any[] = [];
+      // 1. BLE Discovery
       try {
         await BleClient.initialize();
-        await BleClient.requestLEScan(
-          { },
-          (result) => {
-            if (result.device.name?.includes('Holo') || result.device.name?.includes('ESP32')) {
-               bleDevices.push({
-                 id: result.device.deviceId,
-                 name: result.device.name || "Unknown ESP32 BLE",
-                 ip: "BLE Connection",
-                 strength: result.rssi
-               });
-            }
+        await BleClient.requestLEScan({}, (result) => {
+          if (result.device.name?.includes('Holo') || result.device.name?.includes('ESP32')) {
+            bleDevices.push({
+              id: result.device.deviceId,
+              name: result.device.name || "Holospin_BLE",
+              ip: "BLE / Bluetooth",
+              strength: result.rssi
+            });
           }
-        );
-        // Scan for 3 seconds
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        });
+        await new Promise(r => setTimeout(r, 3000));
         await BleClient.stopLEScan();
-      } catch (err) {
-        console.warn("BLE Scan failed (may not be supported on this browser/platform):", err);
-        // Give 2 seconds artificial delay so the UI shows scanning if BLE fails entirely.
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      } catch (e) {}
+
+      // 2. WiFi Discovery
+      try {
+        const netRes = await fetch("/scan");
+        if (netRes.ok) {
+          const nets = await netRes.json();
+          nets.forEach((n: any) => bleDevices.push({
+            id: n.ssid,
+            name: n.ssid,
+            ip: "192.168.4.1",
+            strength: n.signal,
+            type: "WIFI"
+          }));
+        }
+      } catch (e) {}
 
       // Merge and set
-      // Remove duplicates by ID
       const uniqueIds = new Set();
       const finalDevices = bleDevices.filter(d => {
         if (!uniqueIds.has(d.id)) {
@@ -1286,6 +1311,43 @@ export default function App() {
     } catch (err) {
       console.error(err);
       setCalibrationStage("error");
+    }
+  };
+
+  const handleHoloUpload = async (radialData: number[][][]) => {
+    try {
+      setToastMessage("Preparing hardware transmission... / מכין שידור לחומרה");
+      
+      // Flatten to Uint8Array [r, g, b, r, g, b ...]
+      const totalPixels = 128 * 64;
+      const flatBuffer = new Uint8Array(totalPixels * 3);
+      
+      let cursor = 0;
+      for (let s = 0; s < 128; s++) {
+        for (let r = 0; r < 64; r++) {
+          const [red, green, blue] = radialData[s][r];
+          flatBuffer[cursor++] = red;
+          flatBuffer[cursor++] = green;
+          flatBuffer[cursor++] = blue;
+        }
+      }
+
+      setToastMessage("Uploading frames... / מעלה פריימים ");
+      
+      const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/upload" : "/upload";
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        body: flatBuffer
+      });
+
+      if (response.ok) {
+        setToastMessage("Sync complete! Displaying hologram / סנכרון הושלם! מציג הולוגרמה");
+      } else {
+        throw new Error("Upload failed");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Hardware communication error / שגיאת תקשורת עם המכשיר");
     }
   };
 
@@ -3696,17 +3758,21 @@ void loop()
     if (activeTab === "library") {
       return (
         <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 font-sans">
+          <div className="flex flex-col gap-2 mt-4">
+            <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-1">
+              PRO IMAGE PIPELINE / העלאת תכנים מקצועית
+            </h3>
+            <p className="text-[10px] text-slate-500 leading-relaxed mb-4">
+              Upload an image to convert it into radial slices for 360° holographic projection.
+            </p>
+          </div>
+
+          <HoloSlicer onUpload={handleHoloUpload} />
+
           <div className="flex items-center justify-between mt-4">
             <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-0">
-              CONTENT LIBRARY / ספריית תוכן
+              Cloud Storage / ספריית ענן
             </h3>
-            <button 
-              onClick={() => setShowHowItWorks(!showHowItWorks)}
-              className="text-[10px] font-bold text-[#a855f7] hover:text-[#c084fc] flex items-center gap-1 uppercase tracking-tight transition-colors"
-            >
-              <Info className="w-3 h-3" />
-              {showHowItWorks ? 'Close Info' : 'How it works?'}
-            </button>
           </div>
 
           <AnimatePresence>
@@ -3870,7 +3936,7 @@ void loop()
               <Gauge 
                   value={rpm} 
                   min={0} 
-                  max={300} 
+                  max={2000} 
                   label="RPM" 
                   unit=" RPM" 
                   colorClass="text-[#00b4d8]"
@@ -4352,6 +4418,18 @@ void loop()
       );
     }
 
+    if (activeTab === "calibration") {
+      return (
+        <div className="pb-28 animate-in fade-in slide-in-from-bottom-4">
+          <CalibrationPanel 
+            config={calibrationConfig} 
+            telemetry={streamData} 
+            onUpdate={handleCalibrationUpdate} 
+          />
+        </div>
+      );
+    }
+
     if (activeTab === "settings") {
       return (
         <div className="px-5 pt-2 pb-28 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4">
@@ -4774,7 +4852,23 @@ void loop()
           <span
             className={`text-[9px] font-bold tracking-widest ${activeTab === "controller" ? "text-[#00b4d8]" : "text-slate-500"}`}
           >
-            CONTROLLER
+            MAIN
+          </span>
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab("calibration");
+            setSubPage(null);
+          }}
+          className="flex flex-col items-center gap-1.5 focus:outline-none transition-transform active:scale-95"
+        >
+          <Target
+            className={`w-6 h-6 transition-colors ${activeTab === "calibration" ? "text-[#00b4d8]" : "text-slate-500 hover:text-slate-400"}`}
+          />
+          <span
+            className={`text-[9px] font-bold tracking-widest ${activeTab === "calibration" ? "text-[#00b4d8]" : "text-slate-500"}`}
+          >
+            SYNC
           </span>
         </button>
         <button

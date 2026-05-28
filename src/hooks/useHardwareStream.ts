@@ -18,7 +18,7 @@ export function useHardwareStream(initialDeviceId: string | null) {
     if (!deviceId || !isConnected) return false;
     try {
       const dataView = new TextEncoder().encode(JSON.stringify(payload));
-      await BleClient.write(deviceId, ESP32_SERVICE, ESP32_CHARACTERISTIC_RX, dataView);
+      await BleClient.write(deviceId, ESP32_SERVICE, ESP32_CHARACTERISTIC_RX, new DataView(dataView.buffer));
       return true;
     } catch (err) {
       console.error("BLE Write Error:", err);

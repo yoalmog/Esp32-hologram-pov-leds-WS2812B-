@@ -61,8 +61,8 @@ export function HardwareHealth({
   };
 
   const hallStatus = healthData ? (healthData.rpm !== undefined ? "ok" : "unknown") : "unknown";
-  const ledStatus = healthData ? "ok" : "unknown";
-  const motorStatus = healthData ? (healthData.status === "ready" ? "ok" : "unknown") : "unknown";
+  const ledStatus = healthData ? (healthData.sync ? "calibrated" : "ok") : "unknown";
+  const motorStatus = healthData ? (healthData.status === "ready" || healthData.rpm > 0 ? "ok" : "unknown") : "unknown";
 
   return (
     <div className="w-full bg-[#050608] border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
