@@ -6,6 +6,9 @@ import { Network } from '@capacitor/network';
 import { Camera as CapacitorCamera } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
 import { Filesystem } from '@capacitor/filesystem';
+import { usePermissions } from "./hooks/usePermissions";
+import { useHardwareStream } from "./hooks/useHardwareStream";
+import { PermissionsManager } from "./components/PermissionsManager";
 
 import {
   Menu,
@@ -71,8 +74,8 @@ import galaxy1 from "./assets/images/hd_vivid_galaxy_1779780978111.png";
 import butterfly from "./assets/images/hologram_butterfly_1779775623164.png";
 import galaxy2 from "./assets/images/rainbow_galaxy_1779781352503.png";
 import galaxy3 from "./assets/images/warm_galaxy_1779781369262.png";
-import video1 from "./assets/12656_Big_Bang_1080.webm";
-import video2 from "./assets/129936-745943770.mp4";
+const video1 = "/videos/12656_Big_Bang_1080.webm";
+const video2 = "/videos/129936-745943770.mp4";
 
 export const VIDEO_PRESETS = [
   { id: "big_bang", name: "Galaxy Big Bang 🌌", url: video1 },
@@ -668,23 +671,6 @@ export default function App() {
   const [splashProgress, setSplashProgress] = useState(0);
 
   useEffect(() => {
-    // Request Android Permissions via Capacitor on startup
-    const requestPermissions = async () => {
-      try {
-        await BleClient.initialize({ androidNeverForLocation: true });
-        
-        // Try requesting camera, filesystem, and geolocation permissions
-        try { await CapacitorCamera.requestPermissions(); } catch(e) {}
-        try { await Geolocation.requestPermissions(); } catch(e) {}
-        try { await Filesystem.requestPermissions(); } catch(e) {}
-      } catch (err) {
-        console.log("Permission request failed or not supported in web env:", err);
-      }
-    };
-    requestPermissions();
-  }, []);
-
-  useEffect(() => {
     let logoTimer: any;
     let endTimer: any;
     let progressInterval: any;
@@ -811,48 +797,50 @@ export default function App() {
   };
 
   // Connection and Sensor State
-  const [isConnected, setIsConnected] = useState(false);
+  const [showPermissions, setShowPermissions] = useState(false);
+  const [activeBleId, setActiveBleId] = useState<string | null>(null);
+  const { 
+    streamData, 
+    isConnected: bleIsConnected, 
+    isScanning: bleIsScanning,
+    error: bleError, 
+    sendCommand,
+    scanAndConnect 
+  } = useHardwareStream(activeBleId);
   const [isRetrying, setIsRetrying] = useState(false);
-  const [isBluetoothConnected, setIsBluetoothConnected] = useState(false);
   const [isBluetoothConnecting, setIsBluetoothConnecting] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Sync BLE connection status with UI
+  const isBluetoothConnected = bleIsConnected;
+
+  // Update telemetry data dynamically
+  useEffect(() => {
+    if (streamData) {
+      if (streamData.rpm !== undefined) setRpm(streamData.rpm);
+      if (streamData.pulses) setHallPulses(streamData.pulses);
+      if (streamData.status) setDeviceStatus(streamData.status);
+    }
+  }, [streamData]);
+
+  useEffect(() => {
+    if (bleError) {
+      setToastMessage(bleError);
+    }
+  }, [bleError]);
+
+  useEffect(() => {
+    if (showSplash === false) {
+      setTimeout(() => setShowPermissions(true), 500);
+    }
+  }, [showSplash]);
 
   const handleBluetoothConnect = async () => {
     try {
-      setIsBluetoothConnecting(true);
-      if (!(navigator as any).bluetooth) {
-        setToastMessage("דפדפן זה אינו תומך ב-Bluetooth (Web Bluetooth API)");
-        setIsBluetoothConnecting(false);
-        return;
-      }
-      
-      const device = await (navigator as any).bluetooth.requestDevice({
-        filters: [{ namePrefix: 'Holospin' }],
-        optionalServices: ['4fafc201-1fb5-459e-8fcc-c5c9c331914b']
-      });
-
-      const server = await device.gatt.connect();
-      
-      // Keep track of the device in state
-      updateState("bluetooth", "connected", true);
-      updateState("bluetooth", "name", device.name || "Holospin_BLE");
-      
-      setIsBluetoothConnected(true);
-      setIsConnected(true);
-      setToastMessage(`חובר בהצלחה ל-Bluetooth: ${device.name}`);
-      
-      device.addEventListener('gattserverdisconnected', () => {
-         setIsBluetoothConnected(false);
-         setIsConnected(false);
-         updateState("bluetooth", "connected", false);
-         setToastMessage("חיבור ה-Bluetooth נותק / Bluetooth Disconnected");
-      });
-
+      setToastMessage("סורק אחר חומרת הולוספין... / Scanning for Holospin...");
+      await scanAndConnect();
     } catch (err: any) {
-      if (err.name !== "NotFoundError") {
-        setToastMessage(`שגיאת Bluetooth: ${err.message}`);
-      }
-    } finally {
-      setIsBluetoothConnecting(false);
+      setToastMessage(err.message || "Connection failed");
     }
   };
 
@@ -1148,6 +1136,42 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isBluetoothConnected]);
 
+  useEffect(() => {
+    // Broadcast live control parameters to device
+    const payload = {
+      cmd: "live_control",
+      motorSpeed,
+      brightness,
+      effectSpeedRate,
+      effectScale,
+      effectComplexity,
+      activeEffect,
+      logoRotation,
+      povText
+    };
+
+    const broadcast = async () => {
+      if (isBluetoothConnected && activeBleId) {
+        await sendCommand(payload);
+      } else if (isConnected) {
+        try {
+          const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/control" : "/control";
+          await fetch(targetUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } catch (e) {
+          // ignore spammy errors
+        }
+      }
+    };
+    
+    // Add simple debounce
+    const t = setTimeout(broadcast, 100);
+    return () => clearTimeout(t);
+  }, [motorSpeed, brightness, effectSpeedRate, effectScale, effectComplexity, activeEffect, logoRotation, povText]);
+
   const handleSavePreset = (slotId: string) => {
     const freshPreset = {
       activeEffect,
@@ -1363,8 +1387,30 @@ export default function App() {
     return defaultState;
   });
 
-  const updateState = (cat: string, key: string, val: any) => {
+  const updateState = async (cat: string, key: string, val: any) => {
+    // 1. Update local UI
     setState((p: any) => ({ ...p, [cat]: { ...p[cat], [key]: val } }));
+
+    // 2. Transmit to Hardware
+    const payload = { category: cat, update: { [key]: val } };
+    
+    // Prefer BLE if connected
+    if (isBluetoothConnected && activeBleId) {
+      await sendCommand(payload);
+    } 
+    // Fallback to HTTP API if network connected
+    else if (isConnected) {
+      try {
+        const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/config" : "/config";
+        await fetch(targetUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.warn("Failed to push state via WiFi HTTP API", err);
+      }
+    }
   };
 
   const renderHeader = () => {
@@ -2420,7 +2466,7 @@ void loop()
             </h4>
             <p className="text-xs text-slate-400">Update firmware wirelessly via ElegantOTA. Ensure the device is connected to the same network.</p>
             <button
-              onClick={() => window.open('/update', '_blank')}
+              onClick={() => window.open(state.wifi.mode === "AP" ? "http://192.168.4.1/update" : "/update", '_blank')}
               className="mt-2 w-full py-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-400 font-bold uppercase text-[10px] tracking-widest transition"
             >
               Open OTA Manager 
@@ -3243,7 +3289,7 @@ void loop()
               }`}
               onClick={() => setBgImageId("planet")}
             >
-              <img src={planet} alt="Planet" className="absolute inset-0 w-full h-full object-cover z-0 opacity-60" />
+              <img src={planetImg} alt="Planet" className="absolute inset-0 w-full h-full object-cover z-0 opacity-60" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10"></div>
               <span className="relative z-20 font-bold text-white tracking-widest text-[11px]">HOLO PLANET</span>
             </div>
@@ -3833,7 +3879,10 @@ void loop()
           </div>
 
           <div className="mx-auto w-full max-w-3xl mb-8">
-            <HardwareHealth apiUrl={state.wifi.mode === "AP" ? "http://192.168.4.1/status" : "/status"} />
+            <HardwareHealth 
+              apiUrl={state.wifi.mode === "AP" ? "http://192.168.4.1/status" : "/status"} 
+              externalData={isBluetoothConnected ? streamData : null} 
+            />
           </div>
 
           <section>
@@ -4666,6 +4715,11 @@ void loop()
 
   return (
     <div className="bg-bg-app min-h-screen text-text-primary font-sans w-full max-w-md mx-auto shadow-2xl relative overflow-x-hidden flex flex-col antialiased">
+      <AnimatePresence>
+        {showPermissions && (
+          <PermissionsManager onComplete={() => setShowPermissions(false)} />
+        )}
+      </AnimatePresence>
       {isLightMode && (
         <style>{`
           .bg-\\[\\#0c0e15\\], .bg-\\[\\#0c0e15\\]\\/90, .bg-\\[\\#090a10\\], .bg-black\\/40, .bg-\\[\\#161d2a\\], .bg-\\[\\#090a10\\]\\/95, .bg-\\[\\#0c0e15\\]\\/95 {

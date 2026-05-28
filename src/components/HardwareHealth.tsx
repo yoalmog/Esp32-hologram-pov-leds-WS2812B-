@@ -1,12 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { Activity, Cpu, Lightbulb, RotateCcw } from "lucide-react";
 
-export function HardwareHealth({ apiUrl = "/status" }: { apiUrl?: string }) {
-  const [healthData, setHealthData] = useState<any>(null);
+export function HardwareHealth({ 
+  apiUrl = "/status", 
+  externalData = null 
+}: { 
+  apiUrl?: string;
+  externalData?: any;
+}) {
+  const [internalHealthData, setInternalHealthData] = useState<any>(null);
   const [isPolling, setIsPolling] = useState(true);
 
+  // Use external data if provided, otherwise use internal polling
+  const healthData = externalData || internalHealthData;
+
   useEffect(() => {
-    if (!isPolling) return;
+    if (!isPolling || externalData) return;
 
     const fetchHealth = async () => {
       try {
@@ -16,18 +25,18 @@ export function HardwareHealth({ apiUrl = "/status" }: { apiUrl?: string }) {
         clearTimeout(id);
         if (res.ok) {
           const data = await res.json();
-          setHealthData(data);
+          setInternalHealthData(data);
         }
       } catch (err) {
         // Silent fail on polling to avoid jitter
-        setHealthData(null);
+        setInternalHealthData(null);
       }
     };
 
     fetchHealth();
     const interval = setInterval(fetchHealth, 3000);
     return () => clearInterval(interval);
-  }, [isPolling, apiUrl]);
+  }, [isPolling, apiUrl, externalData]);
 
   const getActivityColor = (status: string) => {
     switch (status) {
@@ -84,7 +93,7 @@ export function HardwareHealth({ apiUrl = "/status" }: { apiUrl?: string }) {
         {/* Leds */}
         <div className="bg-[#0b0d14] rounded-xl p-3 border border-slate-800/80 flex flex-col items-center justify-center gap-2 relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-1">
-             <div className={`w-1.5 h-1.5 rounded-full ${ledStatus === 'healthy' || ledStatus === 'ok' ? 'bg-[#00b4d8] shadow-[0_0_5px_#00b4d8]' : 'bg-slate-600'}`}></div>
+             <div className={`w-1.5 h-1.5 rounded-full ${ledStatus === 'ok' || ledStatus === 'calibrated' ? 'bg-[#00b4d8] shadow-[0_0_5px_#00b4d8]' : 'bg-slate-600'}`}></div>
           </div>
           <Lightbulb className={`w-6 h-6 ${getActivityColor(ledStatus)}`} />
           <div className="text-center">

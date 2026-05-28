@@ -5,8 +5,9 @@ import butterfly from "../assets/images/hologram_butterfly_1779775623164.png";
 import planet from "../assets/images/hologram_planet_1779776225377.png";
 import galaxy2 from "../assets/images/rainbow_galaxy_1779781352503.png";
 import galaxy3 from "../assets/images/warm_galaxy_1779781369262.png";
-import video1 from "../assets/12656_Big_Bang_1080.webm";
-import video2 from "../assets/129936-745943770.mp4";
+
+const video1 = "/videos/12656_Big_Bang_1080.webm";
+const video2 = "/videos/129936-745943770.mp4";
 
 interface Props {
   bgImageId?: string;
@@ -52,7 +53,7 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
   }, [bgImageId, isVideo]);
 
   return (
-    <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden bg-[#020108] flex items-center justify-center">
+    <div className="fixed inset-0 -z-50 pointer-events-none overflow-hidden bg-[#020108] flex items-center justify-center">
       <style>{`
         @keyframes micro-jitter {
           0%, 100% { transform: translate(0, 0); }
@@ -75,8 +76,9 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
             loop
             muted
             playsInline
+            disablePictureInPicture
             crossOrigin="anonymous"
-            className="absolute w-full h-full object-cover opacity-80 transition-opacity duration-1000"
+            className="absolute w-full h-full object-cover opacity-80"
             style={{ 
               imageRendering: "high-quality" as any,
               transform: "translate3d(0, 0, 0)"
