@@ -29,13 +29,16 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'zulu'
+          distribution: 'temurin'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Sync Capacitor
         run: npx cap sync android
+
+      - name: Fix Gradle Wrapper
+        run: bash fix_gradle_wrapper.sh
 
       - name: Build Android APK
         run: |
