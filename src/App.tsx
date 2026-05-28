@@ -2024,8 +2024,8 @@ ${registeredListString}
   HOLOSPIN POV 3D - MAIN FIRMWARE
   
   ROUTER CONFIG (STA):
-  SSID: \${state.wifi.routerSsid || "Not Set"}
-  PASS: \${state.wifi.routerPass ? "****" : "Not Set"}
+  SSID: ${state.wifi.routerSsid || "Not Set"}
+  PASS: ${state.wifi.routerPass ? "****" : "Not Set"}
   =====================================================
 */
 
@@ -2044,7 +2044,8 @@ ${registeredListString}
 // LED STRIPS
 // =====================================================
 
-\${pinsArray.map((pin: string, i: number) => `NeoPixelBus<\${featureName}, NeoEsp32Rmt\${i}Ws2812xMethod>\\n    strip\${i + 1}(PIXEL_COUNT, PIN_STRIP\${i + 1});`).join("\\n\\n")}
+${pinsArray.map((pin: string, i: number) => `NeoPixelBus<${featureName}, NeoEsp32Rmt${i}Ws2812xMethod>
+    strip${i + 1}(PIXEL_COUNT, PIN_STRIP${i + 1});`).join("\n\n")}
 
 // =====================================================
 // SERVER
@@ -2092,7 +2093,8 @@ void setup()
     // LEDS
     // =================================================
 
-\${pinsArray.map((pin: string, i: number) => `    strip\${i + 1}.Begin();\\n    strip\${i + 1}.Show();`).join("\\n\\n")}
+${pinsArray.map((pin: string, i: number) => `    strip${i + 1}.Begin();
+    strip${i + 1}.Show();`).join("\n\n")}
 
     Serial.println("LED INIT OK");
 
@@ -2183,14 +2185,14 @@ void setup()
         {
             for (int i = 0; i < PIXEL_COUNT; i++)
             {
-\${pinsArray.map((pin: string, i: number) => `                strip\${i + 1}.SetPixelColor(i, RgbColor(255, 0, 0));`).join("\\n")}
+${pinsArray.map((pin: string, i: number) => `                strip${i + 1}.SetPixelColor(i, RgbColor(255, 0, 0));`).join("\n")}
             }
         }
         else
         {
-\${pinsArray.map((pin: string, i: number) => `            strip\${i + 1}.ClearTo(RgbColor(0));`).join("\\n")}
+${pinsArray.map((pin: string, i: number) => `            strip${i + 1}.ClearTo(RgbColor(0));`).join("\n")}
         }
-\${pinsArray.map((pin: string, i: number) => `        strip\${i + 1}.Show();`).join("\\n")}
+${pinsArray.map((pin: string, i: number) => `        strip${i + 1}.Show();`).join("\n")}
         server.send(200, "text/plain", ledState ? "ON" : "OFF");
     });
 
