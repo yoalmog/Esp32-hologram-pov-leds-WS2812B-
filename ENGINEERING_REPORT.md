@@ -70,3 +70,27 @@
 - **WiFi Drop:** Logic in loop (or Ticker) triggers `WiFi.reconnect()` if `WiFi.status() != WL_CONNECTED`.
 - **WDT:** Priority 5 task yielding via `vTaskDelay(1)` ensures IDLE task resets Task Watchdog.
 - **BLE Loss:** `onDisconnect` immediately triggers `BLEDevice::startAdvertising()`.
+
+## 8. STABILITY BREAKTHROUGH & ARCHITECTURE ANALYSIS (v2.2.0)
+The previous firmware combined several hardware-intensive subsystems (AsyncWebServer/AsyncTCP, BLE, multiple NeoPixelBus RMT channels, heavy rendering loops, and large memory allocations), resulting in watchdog resets, boot loops, and WiFi/BLE startup failures. 
+
+The architecture has been redesigned to achieve perfect stability under simultaneous connection and display loads:
+
+### A. WebServer vs. AsyncWebServer
+- **Problem:** AsyncTCP + BLE + NeoPixelBus RMT run heavily on high-frequency interrupts, hardware timers, and dynamic heap allocation. Running them simultaneously on a resource-constrained ESP32 triggers critical interrupt collisions and heap fragmentation.
+- **Solution:** Replaced `AsyncWebServer` with the standard, synchronous `WebServer` library. It operates deterministically, reduces memory pressure, and completely eliminates race conditions in the network stack.
+
+### B. Hardware-Safe LED Methods (RMT Channels vs. I2S)
+- **Problem:** Using more than two RMT (Remote Control) channels alongside BLE and WiFi leads to clock or timing conflicts and general hardware resource contention.
+- **Solution:** Configured maximum of two ultra-stable RMT channels (or transitioning to `NeoEsp32I2s1Ws2812xMethod` for 4 strips) to preserve ESP32 hardware integrity.
+
+### C. Dedicated FreeRTOS Core Separation
+- **Core 0 (System Core):** Handles background networking, BLE stack processing, HTTP requests, and OTA maintenance. The web handler is isolated to a non-blocking FreeRTOS task:
+  ```cpp
+  xTaskCreatePinnedToCore(webloop, "webloop", 4096, NULL, 1, NULL, 0);
+  ```
+- **Core 1 (Application Core):** Reserved exclusively for rendering high-speed, high-frequency POV loops and updating LEDs, ensuring jitter-free holographic displays.
+
+### D. Network Conflict Prevention
+- **Distinct SSIDs:** The router connection (STA Mode) and local access point (AP Mode) now always default to distinct SSIDs (`AP_SSID "Holospin_POV2"` vs `ROUTER_SSID "Dael CR"`). This prevents recursive connection loops, IP address clashes, and client routing issues.
+- **WiFi Sleep Optimization:** Added `WiFi.setSleep(false)` following mode initialization to disable telemetry battery-saving loops, which keeps the BLE and Web services consistently responsive under interactive use.

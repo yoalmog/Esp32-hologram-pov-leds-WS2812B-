@@ -1,195 +1,322 @@
 #include <Arduino.h>
-#include <FastLED.h>
 #include <WiFi.h>
+#include <AsyncTCP.h>
+#include <WebServer.h>
+#include <ElegantOTA.h>
+#include <NeoPixelBus.h>
+#include <ArduinoJson.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
+#include <BLEUtils.h>
 #include <BLE2902.h>
-#include <ESPAsyncWebServer.h>
-#include <ArduinoJson.h>
-#include <LittleFS.h>
+#include "Config.h"
 
-// --- HARDWARE CONFIGURATION (PRODUCTION) ---
-#define LED_PIN_A 13
-#define LED_PIN_B 14
-#define HALL_PIN  12
-#define MOTOR_PIN 27
-#define NUM_LEDS_PER_ARM 64
-#define TOTAL_LEDS (NUM_LEDS_PER_ARM * 2)
-
-CRGB ledsA[NUM_LEDS_PER_ARM];
-CRGB ledsB[NUM_LEDS_PER_ARM];
-
-// --- POV SYNC CORE ---
-volatile uint32_t lastHallTime = 0;
-volatile uint32_t rotationPeriod = 0;
-volatile uint32_t currentRpm = 0;
-bool isLocked = false;
-
-// --- FRAME BUFFER (Radial) ---
-uint8_t imageBuffer[128 * 64 * 3]; 
-bool hasCustomImage = false;
-
-// --- CALIBRATION STATE ---
-float phaseOffsetB = 180.0f;
-float angularCorrection = 0.0f;
-float gammaValue = 2.2f;
-String activePattern = "none";
-uint8_t globalBrightness = 150;
-
-// Gamma Correction Table (8-bit)
-uint8_t gammaTable[256];
-
-void updateGammaTable() {
-    for (int i = 0; i < 256; i++) {
-        gammaTable[i] = (uint8_t)(pow((float)i / 255.0, gammaValue) * 255.0);
-    }
-}
-
-// ISR for Hall Effect Sensor
-void IRAM_ATTR onHallInterrupt() {
-    uint32_t now = micros();
-    uint32_t delta = now - lastHallTime;
-    if (delta > 4000) { 
-        rotationPeriod = delta;
-        lastHallTime = now;
-        currentRpm = 60000000 / delta;
-        isLocked = true;
-    }
-}
-
-// --- STATE & API ---
-AsyncWebServer server(80);
-
+// =====================================================
 // BLE UUIDs
-#define SERVICE_UUID           "0000aaaa-0000-1000-8000-00805f9b34fb"
-#define CHARACTERISTIC_UUID_TX "0000bbbb-0000-1000-8000-00805f9b34fb"
-#define CHARACTERISTIC_UUID_RX "0000cccc-0000-1000-8000-00805f9b34fb"
+// =====================================================
 
-BLECharacteristic *pCharacteristicTX;
-bool deviceConnected = false;
+#define BLE_DEVICE_NAME "Holospin"
+#define BLE_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define BLE_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
-class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) {
-      deviceConnected = true;
-    };
-    void onDisconnect(BLEServer* pServer) {
-      deviceConnected = false;
-      BLEDevice::startAdvertising();
+// =====================================================
+// LED STRIPS
+// =====================================================
+
+NeoPixelBus<NeoGrbFeature, NeoEsp32Rmt0Ws2812xMethod>
+strip1(PIXEL_COUNT, PIN_STRIP1);
+
+NeoPixelBus<NeoGrbFeature, NeoEsp32Rmt1Ws2812xMethod>
+strip2(PIXEL_COUNT, PIN_STRIP2);
+
+// =====================================================
+// SERVER
+// =====================================================
+
+WebServer server(80);
+
+// =====================================================
+// GLOBALS
+// =====================================================
+
+bool ledState = false;
+uint8_t ledR = 255;
+uint8_t ledG = 0;
+uint8_t ledB = 0;
+bool bleConnected = false;
+
+BLEServer* pServer = nullptr;
+BLECharacteristic* pCharLED = nullptr;
+
+// =====================================================
+// LED HELPER
+// =====================================================
+
+void setAllLEDs(uint8_t r, uint8_t g, uint8_t b)
+{
+    for (int i = 0; i < PIXEL_COUNT; i++)
+    {
+        strip1.SetPixelColor(i, RgbColor(r, g, b));
+        strip2.SetPixelColor(i, RgbColor(r, g, b));
+    }
+    strip1.Show();
+    strip2.Show();
+}
+
+void clearAllLEDs()
+{
+    strip1.ClearTo(RgbColor(0));
+    strip2.ClearTo(RgbColor(0));
+    strip1.Show();
+    strip2.Show();
+}
+
+// =====================================================
+// BLE CALLBACKS
+// =====================================================
+
+class HolospinBLEServerCallbacks : public BLEServerCallbacks
+{
+    void onConnect(BLEServer* pSvr) override
+    {
+        bleConnected = true;
+        Serial.println("BLE CONNECTED");
+    }
+
+    void onDisconnect(BLEServer* pSvr) override
+    {
+        bleConnected = false;
+        Serial.println("BLE DISCONNECTED - restarting advertising");
+        pSvr->startAdvertising();
     }
 };
 
-class MyCallbacks: public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *pCharacteristic) {
-      std::string value = pCharacteristic->getValue();
-      if (value.length() > 0) {
-        StaticJsonDocument<256> doc;
-        deserializeJson(doc, value.c_str());
-        if (doc.containsKey("phaseOffset")) phaseOffsetB = doc["phaseOffset"];
-        if (doc.containsKey("pattern")) activePattern = doc["pattern"].as<String>();
-        if (doc.containsKey("gamma")) {
-            gammaValue = doc["gamma"];
-            updateGammaTable();
+class LEDCharCallbacks : public BLECharacteristicCallbacks
+{
+    void onWrite(BLECharacteristic* pChar) override
+    {
+        String value = pChar->getValue().c_str();
+        value.trim();
+        value.toUpperCase();
+
+        Serial.print("BLE CMD: ");
+        Serial.println(value);
+
+        if (value == "ON")
+        {
+            ledState = true;
+            setAllLEDs(ledR, ledG, ledB);
+            pChar->setValue("OK: LEDs ON");
         }
-      }
+        else if (value == "OFF")
+        {
+            ledState = false;
+            clearAllLEDs();
+            pChar->setValue("OK: LEDs OFF");
+        }
+        else if (value == "STATUS")
+        {
+            String status = ledState ? "ON" : "OFF";
+            status += " R:" + String(ledR) +
+                      " G:" + String(ledG) +
+                      " B:" + String(ledB);
+            pChar->setValue(status.c_str());
+        }
+        else
+        {
+            int r = -1, g = -1, b = -1;
+            int first  = value.indexOf(',');
+            int second = value.lastIndexOf(',');
+
+            if (first != -1 && second != -1 && first != second)
+            {
+                r = value.substring(0, first).toInt();
+                g = value.substring(first + 1, second).toInt();
+                b = value.substring(second + 1).toInt();
+            }
+
+            if (r >= 0 && r <= 255 &&
+                g >= 0 && g <= 255 &&
+                b >= 0 && b <= 255)
+            {
+                ledR = r; ledG = g; ledB = b;
+                ledState = true;
+                setAllLEDs(ledR, ledG, ledB);
+
+                String msg = "OK: RGB(" + String(r) + "," +
+                             String(g) + "," + String(b) + ")";
+                pChar->setValue(msg.c_str());
+                Serial.println(msg);
+            }
+            else
+            {
+                pChar->setValue("ERR: unknown command");
+                Serial.println("BLE: unknown command");
+            }
+        }
+
+        pChar->notify();
     }
 };
 
-void setupPOV() {
-    FastLED.addLeds<WS2812B, LED_PIN_A, GRB>(ledsA, NUM_LEDS_PER_ARM);
-    FastLED.addLeds<WS2812B, LED_PIN_B, GRB>(ledsB, NUM_LEDS_PER_ARM);
-    FastLED.setBrightness(globalBrightness);
-    FastLED.setMaxPowerInVoltsAndMilliamps(12, 4000); 
-    updateGammaTable();
-}
+// =====================================================
+// BLE INIT
+// =====================================================
 
-void renderPOV() {
-    if (!isLocked || currentRpm < 200) {
-        FastLED.clear();
-        FastLED.show();
-        return;
-    }
-    uint32_t timeSincePulse = micros() - lastHallTime;
-    if (timeSincePulse > rotationPeriod) timeSincePulse = rotationPeriod;
-    uint16_t phaseA = (uint32_t)timeSincePulse * 65536 / rotationPeriod;
-    uint16_t phaseB = phaseA + (uint16_t)(phaseOffsetB * 65536.0f / 360.0f);
+void setupBLE()
+{
+    BLEDevice::init(BLE_DEVICE_NAME);
 
-    if (activePattern != "none") {
-        // ... (existing pattern logic)
-    } else if (hasCustomImage) {
-        uint16_t sliceA = (phaseA * 128) >> 16;
-        uint16_t sliceB = (phaseB * 128) >> 16;
-        for (int i = 0; i < NUM_LEDS_PER_ARM; i++) {
-            int idxA = (sliceA * 64 + i) * 3;
-            ledsA[i] = CRGB(imageBuffer[idxA], imageBuffer[idxA+1], imageBuffer[idxA+2]);
-            int idxB = (sliceB * 64 + i) * 3;
-            ledsB[i] = CRGB(imageBuffer[idxB], imageBuffer[idxB+1], imageBuffer[idxB+2]);
-        }
-    } else {
-        for (int i = 0; i < NUM_LEDS_PER_ARM; i++) {
-            ledsA[i] = CHSV((phaseA >> 8) + i * 2, 255, 255);
-            ledsB[i] = CHSV((phaseB >> 8) + i * 2, 255, 255);
-        }
-    }
-    for (int i = 0; i < NUM_LEDS_PER_ARM; i++) {
-        ledsA[i].r = gammaTable[ledsA[i].r]; ledsA[i].g = gammaTable[ledsA[i].g]; ledsA[i].b = gammaTable[ledsA[i].b];
-        ledsB[i].r = gammaTable[ledsB[i].r]; ledsB[i].g = gammaTable[ledsB[i].g]; ledsB[i].b = gammaTable[ledsB[i].b];
-    }
-    FastLED.show();
-}
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new HolospinBLEServerCallbacks());
 
-void setup() {
-    Serial.begin(115200);
-    LittleFS.begin(true);
-    pinMode(HALL_PIN, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(HALL_PIN), onHallInterrupt, FALLING);
-    pinMode(MOTOR_PIN, OUTPUT);
-    setupPOV();
+    BLEService* pService = pServer->createService(BLE_SERVICE_UUID);
 
-    WiFi.softAP("HoloSpin_AP", "12345678");
-    server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request){
-        StaticJsonDocument<256> doc;
-        doc["rpm"] = currentRpm;
-        doc["sync"] = isLocked;
-        doc["pattern"] = activePattern;
-        doc["brightness"] = globalBrightness;
-        doc["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : -100;
-        String buf; serializeJson(doc, buf);
-        request->send(200, "application/json", buf);
-    });
-    server.on("/upload", HTTP_POST, [](AsyncWebServerRequest *request){
-        hasCustomImage = true;
-        request->send(200, "application/json", "{\"status\":\"complete\"}");
-    }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-        if (index + len <= sizeof(imageBuffer)) memcpy(imageBuffer + index, data, len);
-    });
-    server.begin();
+    pCharLED = pService->createCharacteristic(
+        BLE_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ  |
+        BLECharacteristic::PROPERTY_WRITE |
+        BLECharacteristic::PROPERTY_NOTIFY
+    );
 
-    BLEDevice::init("HoloSpin");
-    BLEServer *pServer = BLEDevice::createServer();
-    pServer->setCallbacks(new MyServerCallbacks());
-    BLEService *pService = pServer->createService(SERVICE_UUID);
-    pCharacteristicTX = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
-    pCharacteristicTX->addDescriptor(new BLE2902());
-    BLECharacteristic *pCharacteristicRX = pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
-    pCharacteristicRX->setCallbacks(new MyCallbacks());
+    pCharLED->addDescriptor(new BLE2902());
+    pCharLED->setCallbacks(new LEDCharCallbacks());
+    pCharLED->setValue("READY");
+
     pService->start();
-    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
+
+    BLEAdvertising* pAdv = BLEDevice::getAdvertising();
+    pAdv->addServiceUUID(BLE_SERVICE_UUID);
+    pAdv->setScanResponse(true);
+    pAdv->setMinPreferred(0x06);
     BLEDevice::startAdvertising();
+
+    Serial.println("BLE STARTED - Device: " BLE_DEVICE_NAME);
 }
 
-unsigned long lastTelemetry = 0;
-void loop() {
-    renderPOV();
-    if (deviceConnected && millis() - lastTelemetry > 1000) {
-        lastTelemetry = millis();
-        StaticJsonDocument<256> doc;
-        doc["rpm"] = currentRpm;
-        doc["sync"] = isLocked;
-        doc["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : -100;
-        String buf; serializeJson(doc, buf);
-        pCharacteristicTX->setValue(buf.c_str());
-        pCharacteristicTX->notify();
+// =====================================================
+// WEB TASK
+// =====================================================
+
+void webloop(void *pvParameters)
+{
+    for (;;)
+    {
+        server.handleClient();
+        ElegantOTA.loop();
+        vTaskDelay(1);
     }
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup()
+{
+    Serial.begin(115200);
+    delay(2000);
+
+    Serial.println();
+    Serial.println("BOOT OK");
+
+    pinMode(HALL_PIN, INPUT);
+    pinMode(MOTOR_PIN, OUTPUT);
+
+    // =================================================
+    // LEDS
+    // =================================================
+
+    strip1.Begin();
+    strip1.Show();
+
+    strip2.Begin();
+    strip2.Show();
+
+    Serial.println("LED INIT OK");
+
+    // =================================================
+    // BLE
+    // =================================================
+
+    setupBLE();
+
+    // =================================================
+    // WIFI
+    // =================================================
+
+    WiFi.mode(WIFI_AP_STA);
+    Serial.println("Starting WiFi...");
+
+    bool ap = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 4);
+
+    if (ap)
+    {
+        Serial.println("AP STARTED");
+        Serial.print("AP IP: ");
+        Serial.println(WiFi.softAPIP());
+    }
+    else
+    {
+        Serial.println("AP FAILED");
+    }
+
+    delay(500);
+
+    WiFi.begin(ROUTER_SSID, ROUTER_PASS);
+
+    Serial.print("Connecting to router");
+    unsigned long startAttempt = millis();
+
+    while (WiFi.status() != WL_CONNECTED &&
+           millis() - startAttempt < 10000)
+    {
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println();
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        Serial.println("ROUTER CONNECTED");
+        Serial.print("ROUTER IP: ");
+        Serial.println(WiFi.localIP());
+    }
+    else
+    {
+        Serial.println("ROUTER FAILED - AP still available");
+    }
+
+    // =================================================
+    // WEB SERVER
+    // =================================================
+
+    server.on("/", HTTP_GET, []() {
+        server.send(200, "text/plain", "Holospin 3D POV Display Status: Online");
+    });
+
+    ElegantOTA.begin(&server);
+    server.begin();
+    Serial.println("HTTP Server Started");
+
+    // Start web loop task on Core 0 to leave Core 1 free for display processing
+    xTaskCreatePinnedToCore(
+        webloop,     // Task function
+        "webloop",   // Task name
+        4096,        // Stack size
+        NULL,        // Parameters
+        1,           // Priority
+        NULL,        // Task handle
+        0            // Core 0
+    );
+}
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop()
+{
+    // POV render engine loops directly here on Core 1
 }

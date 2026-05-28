@@ -2220,6 +2220,16 @@ ${registeredListString}
   ROUTER CONFIG (STA):
   SSID: ${state.wifi.routerSsid || "Not Set"}
   PASS: ${state.wifi.routerPass ? "****" : "Not Set"}
+
+  BLE CONTROL:
+  Device Name: ${state.bluetooth.name || "Holospin"}
+  Service UUID: 4fafc201-1fb5-459e-8fcc-c5c9c331914b
+  Characteristic UUID: beb5483e-36e1-4688-b7f5-ea07361b26a8
+  BLE COMMANDS:
+  "ON" - הדלק LEDs
+  "OFF" - כבה LEDs
+  "R,G,B" - צבע מותאם, למשל: "255,0,128"
+  "STATUS" - קבל סטטוס נוכחי
   =====================================================
 */
 
@@ -2229,13 +2239,26 @@ ${registeredListString}
 #include <ElegantOTA.h>
 #include <NeoPixelBus.h>
 #include <ArduinoJson.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
 #include "Config.h"
+
+// =====================================================
+// BLE Config
+// =====================================================
+
+#define BLE_DEVICE_NAME "${state.bluetooth.name || "Holospin"}"
+#define BLE_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define BLE_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
 // =====================================================
 // LED STRIPS
 // =====================================================
 
-${pinsArray.map((pin: string, i: number) => `NeoPixelBus<${featureName}, NeoEsp32Rmt${i}Ws2812xMethod>\n    strip${i + 1}(PIXEL_COUNT, PIN_STRIP${i + 1});`).join("\n\n")}
+${pinsArray.map((pin: string, i: number) => `NeoPixelBus<${featureName}, NeoEsp32Rmt${i}Ws2812xMethod>
+strip${i + 1}(PIXEL_COUNT, PIN_STRIP${i + 1});`).join("\n\n")}
 
 // =====================================================
 // SERVER
@@ -2248,6 +2271,155 @@ WebServer server(80);
 // =====================================================
 
 bool ledState = false;
+uint8_t ledR = 255;
+uint8_t ledG = 0;
+uint8_t ledB = 0;
+bool bleConnected = false;
+
+BLEServer* pServer = nullptr;
+BLECharacteristic* pCharLED = nullptr;
+
+// =====================================================
+// LED HELPER
+// =====================================================
+
+void setAllLEDs(uint8_t r, uint8_t g, uint8_t b)
+{
+    for (int i = 0; i < PIXEL_COUNT; i++)
+    {
+${pinsArray.map((pin: string, i: number) => `        strip${i + 1}.SetPixelColor(i, RgbColor(r, g, b));`).join("\n")}
+    }
+${pinsArray.map((pin: string, i: number) => `    strip${i + 1}.Show();`).join("\n")}
+}
+
+void clearAllLEDs()
+{
+${pinsArray.map((pin: string, i: number) => `    strip${i + 1}.ClearTo(RgbColor(0));`).join("\n")}
+${pinsArray.map((pin: string, i: number) => `    strip${i + 1}.Show();`).join("\n")}
+}
+
+// =====================================================
+// BLE CALLBACKS
+// =====================================================
+
+class HolospinBLEServerCallbacks : public BLEServerCallbacks
+{
+    void onConnect(BLEServer* pSvr) override
+    {
+        bleConnected = true;
+        Serial.println("BLE CONNECTED");
+    }
+
+    void onDisconnect(BLEServer* pSvr) override
+    {
+        bleConnected = false;
+        Serial.println("BLE DISCONNECTED - restarting advertising");
+        pSvr->startAdvertising();
+    }
+};
+
+class LEDCharCallbacks : public BLECharacteristicCallbacks
+{
+    void onWrite(BLECharacteristic* pChar) override
+    {
+        String value = pChar->getValue().c_str();
+        value.trim();
+        value.toUpperCase();
+
+        Serial.print("BLE CMD: ");
+        Serial.println(value);
+
+        if (value == "ON")
+        {
+            ledState = true;
+            setAllLEDs(ledR, ledG, ledB);
+            pChar->setValue("OK: LEDs ON");
+        }
+        else if (value == "OFF")
+        {
+            ledState = false;
+            clearAllLEDs();
+            pChar->setValue("OK: LEDs OFF");
+        }
+        else if (value == "STATUS")
+        {
+            String status = ledState ? "ON" : "OFF";
+            status += " R:" + String(ledR) +
+                      " G:" + String(ledG) +
+                      " B:" + String(ledB);
+            pChar->setValue(status.c_str());
+        }
+        else
+        {
+            int r = -1, g = -1, b = -1;
+            int first  = value.indexOf(',');
+            int second = value.lastIndexOf(',');
+
+            if (first != -1 && second != -1 && first != second)
+            {
+                r = value.substring(0, first).toInt();
+                g = value.substring(first + 1, second).toInt();
+                b = value.substring(second + 1).toInt();
+            }
+
+            if (r >= 0 && r <= 255 &&
+                g >= 0 && g <= 255 &&
+                b >= 0 && b <= 255)
+            {
+                ledR = r; ledG = g; ledB = b;
+                ledState = true;
+                setAllLEDs(ledR, ledG, ledB);
+
+                String msg = "OK: RGB(" + String(r) + "," +
+                             String(g) + "," + String(b) + ")";
+                pChar->setValue(msg.c_str());
+                Serial.println(msg);
+            }
+            else
+            {
+                pChar->setValue("ERR: unknown command");
+                Serial.println("BLE: unknown command");
+            }
+        }
+
+        pChar->notify();
+    }
+};
+
+// =====================================================
+// BLE INIT
+// =====================================================
+
+void setupBLE()
+{
+    BLEDevice::init(BLE_DEVICE_NAME);
+
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new HolospinBLEServerCallbacks());
+
+    BLEService* pService = pServer->createService(BLE_SERVICE_UUID);
+
+    pCharLED = pService->createCharacteristic(
+        BLE_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ  |
+        BLECharacteristic::PROPERTY_WRITE |
+        BLECharacteristic::PROPERTY_NOTIFY
+    );
+
+    pCharLED->addDescriptor(new BLE2902());
+    pCharLED->setCallbacks(new LEDCharCallbacks());
+    pCharLED->setValue("READY");
+
+    pService->start();
+
+    BLEAdvertising* pAdv = BLEDevice::getAdvertising();
+    pAdv->addServiceUUID(BLE_SERVICE_UUID);
+    pAdv->setScanResponse(true);
+    pAdv->setMinPreferred(0x06);
+    BLEDevice::startAdvertising();
+
+    Serial.println("BLE STARTED - Device: " BLE_DEVICE_NAME);
+}
 
 // =====================================================
 // WEB TASK
@@ -2258,6 +2430,7 @@ void webloop(void *pvParameters)
     for (;;)
     {
         server.handleClient();
+        ElegantOTA.loop();
         vTaskDelay(1);
     }
 }
@@ -2275,7 +2448,7 @@ void setup()
     Serial.println("BOOT OK");
 
     pinMode(HALL_PIN, INPUT);
-    pinMode(MOTOR_PIN, OUTPUT); // Motor Pin Setup
+    pinMode(MOTOR_PIN, OUTPUT);
 
     // =================================================
     // LEDS
@@ -2286,14 +2459,20 @@ ${pinsArray.map((pin: string, i: number) => `    strip${i + 1}.Begin();\n    str
     Serial.println("LED INIT OK");
 
     // =================================================
+    // BLE
+    // =================================================
+
+    setupBLE();
+
+    // =================================================
     // WIFI
     // =================================================
+
 
     WiFi.mode(WIFI_AP_STA);
     Serial.println("Starting WiFi...");
 
-    // HOTSPOT
-    bool ap = WiFi.softAP(AP_SSID, AP_PASS);
+    bool ap = WiFi.softAP(AP_SSID, AP_PASS, 1, false, 4);
 
     if (ap)
     {
@@ -2306,7 +2485,8 @@ ${pinsArray.map((pin: string, i: number) => `    strip${i + 1}.Begin();\n    str
         Serial.println("AP FAILED");
     }
 
-    // ROUTER CONNECTION
+    delay(500);
+
     WiFi.begin(ROUTER_SSID, ROUTER_PASS);
 
     Serial.print("Connecting to router");
@@ -2329,15 +2509,14 @@ ${pinsArray.map((pin: string, i: number) => `    strip${i + 1}.Begin();\n    str
     }
     else
     {
-        Serial.println("ROUTER FAILED");
+        Serial.println("ROUTER FAILED - AP still available");
     }
 
     // =================================================
     // WEB SERVER
     // =================================================
 
-    server.on("/", []()
-              {
+    server.on("/", HTTP_GET, []() {
         server.send(
             200,
             "text/html",
@@ -2350,48 +2529,40 @@ ${pinsArray.map((pin: string, i: number) => `    strip${i + 1}.Begin();\n    str
             </style>\\
             </head>\\
             <body>\\
-            <h1>Holospin ESP32</h1>\\
-            <button onclick=\"fetch('/toggle').catch(e => console.error(e))\">Toggle LEDs</button>\\
+            <h1>HoloSpin ESP32</h1>\\
+            <button onclick=\\"fetch('/toggle').catch(e => console.error(e))\\">Toggle LEDs</button>\\
             </body>\\
             </html>");
     });
 
     server.on("/toggle", []()
-              {
+    {
         ledState = !ledState;
-
         if (ledState)
         {
-            for (int i = 0; i < PIXEL_COUNT; i++)
-            {
-${pinsArray.map((pin: string, i: number) => `                strip${i + 1}.SetPixelColor(i, RgbColor(255, 0, 0));`).join("\n")}
-            }
+            setAllLEDs(255, 0, 0);
         }
         else
         {
-${pinsArray.map((pin: string, i: number) => `            strip${i + 1}.ClearTo(RgbColor(0));`).join("\n")}
+            clearAllLEDs();
         }
-
-${pinsArray.map((pin: string, i: number) => `        strip${i + 1}.Show();`).join("\n")}
-        server.send(200, "text/plain", "OK"); });
+        server.send(200, "text/plain", "OK");
+    });
 
     ElegantOTA.begin(&server);
     server.begin();
+    Serial.println("HTTP Server Started");
 
-    Serial.println("HTTP SERVER STARTED");
-
-    // =================================================
-    // TASK
-    // =================================================
-
+    // Start web loop task on Core 0 to leave Core 1 free for display processing
     xTaskCreatePinnedToCore(
-        webloop,
-        "webloop",
-        4000,
-        NULL,
-        1,
-        NULL,
-        0);
+        webloop,     // Task function
+        "webloop",   // Task name
+        4096,        // Stack size
+        NULL,        // Parameters
+        1,           // Priority
+        NULL,        // Task handle
+        0            // Core 0
+    );
 
     Serial.println("SETUP DONE");
 }
@@ -2402,15 +2573,7 @@ ${pinsArray.map((pin: string, i: number) => `        strip${i + 1}.Show();`).joi
 
 void loop()
 {
-    static unsigned long lastBlink = 0;
-
-    if (millis() - lastBlink > 1000)
-    {
-        lastBlink = millis();
-        Serial.println("RUNNING");
-    }
-
-    delay(10);
+    // POV render engine loops directly here on Core 1
 }`;
 
       const downloadFile = (filename: string, content: string) => {
@@ -3625,7 +3788,103 @@ void loop()
       );
     }
 
-      if (activeTab === "controller") {
+    if (activeTab === "devices") {
+      return (
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+          <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-1 text-center font-black">
+            CONNECTED DEVICES / מכשירים מחוברים
+          </h3>
+          <div className="border border-slate-800 bg-[#0c0e15]/80 rounded-3xl p-6 flex flex-col gap-5 shadow-xl backdrop-blur-md">
+             <div className="flex items-center justify-between p-4 bg-slate-900/40 border border-slate-800/50 rounded-2xl">
+                <div className="flex items-center gap-4">
+                   <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+                      <Cpu className="w-5 h-5 text-blue-400" />
+                   </div>
+                   <div className="flex flex-col">
+                      <span className="text-sm font-bold text-white tracking-tight">HoloSpin POV ESP32</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{state.wifi.ip || "192.168.4.1"}</span>
+                   </div>
+                </div>
+                <div className="flex items-center gap-2 bg-[#22c55e]/10 px-3 py-1 rounded-full border border-[#22c55e]/30">
+                   <div className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse"></div>
+                   <span className="text-[8px] font-black text-[#22c55e] uppercase">Active</span>
+                </div>
+             </div>
+
+             <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50 flex flex-col gap-1 items-center text-center">
+                   <Wifi className="w-5 h-5 text-sky-400 mb-1" />
+                   <span className="text-[10px] text-slate-400 uppercase font-black">Signal</span>
+                   <span className="text-[11px] font-bold text-white">-45 dBm</span>
+                </div>
+                <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800/50 flex flex-col gap-1 items-center text-center">
+                   <Zap className="w-5 h-5 text-amber-400 mb-1" />
+                   <span className="text-[10px] text-slate-400 uppercase font-black">Power</span>
+                   <span className="text-[11px] font-bold text-white">USB-C / 5.1V</span>
+                </div>
+             </div>
+          </div>
+          
+          <div className="bg-slate-900/30 border border-slate-800/50 rounded-3xl p-6 backdrop-blur-sm">
+             <h4 className="text-[10px] text-slate-400 font-black tracking-widest uppercase mb-4 pl-1">VIRTUAL HARDWARE STATUS</h4>
+             <div className="space-y-4">
+                <div className="flex justify-between items-center py-1">
+                   <div className="flex flex-col">
+                      <span className="text-[11px] text-slate-200 font-bold uppercase tracking-tight">System Core</span>
+                      <span className="text-[8px] text-slate-500 uppercase">Dual-Core Xtensa® LX6</span>
+                   </div>
+                   <span className="text-[10px] text-blue-400 font-mono font-bold">READY</span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                   <div className="flex flex-col">
+                      <span className="text-[11px] text-slate-200 font-bold uppercase tracking-tight">Flash Memory</span>
+                      <span className="text-[8px] text-slate-500 uppercase">4MB SPI Flash</span>
+                   </div>
+                   <span className="text-[10px] text-emerald-400 font-mono font-bold">HEALTHY</span>
+                </div>
+             </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === "library") {
+      return (
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+          <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-1 text-center font-black">
+            MEDIA LIBRARY / ספריית קבצים
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+             {EFFECTS.map(effect => (
+               <div key={effect.id} className="bg-[#0c0e15]/70 border border-slate-800/60 rounded-3xl p-4 flex flex-col items-center gap-3 transition hover:border-[#00b4d8]/50 hover:bg-[#00b4d8]/5 group cursor-pointer" onClick={() => { setActiveEffect(effect.id); setActiveTab("controller"); }}>
+                  <div className="w-14 h-14 rounded-2xl bg-slate-900/80 flex items-center justify-center border border-slate-800 group-hover:bg-[#00b4d8]/10 group-hover:border-[#00b4d8]/30 transition shadow-inner">
+                     {effect.icon(effect.color)}
+                  </div>
+                  <div className="flex flex-col items-center">
+                     <span className="text-[10px] font-black text-white uppercase tracking-tighter">{effect.label}</span>
+                     <span className="text-[7.5px] text-slate-500 uppercase font-bold mt-0.5 tracking-[0.1em]">Pov Effect</span>
+                  </div>
+               </div>
+             ))}
+             {/* Mock Content */}
+             <div className="bg-[#0c0e15]/40 border border-slate-800/40 rounded-3xl p-4 flex flex-col items-center gap-3 opacity-50 relative overflow-hidden">
+                <div className="w-14 h-14 rounded-2xl bg-slate-900/80 flex items-center justify-center border border-slate-800">
+                   <HardDrive className="w-7 h-7 text-slate-600" />
+                </div>
+                <div className="flex flex-col items-center">
+                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">SD STORAGE</span>
+                   <span className="text-[7.5px] text-slate-600 uppercase font-bold mt-0.5 tracking-[0.1em]">32GB Empty</span>
+                </div>
+                <div className="absolute top-2 right-2">
+                   <AlertTriangle className="w-3 h-3 text-amber-600" />
+                </div>
+             </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === "controller") {
         return (
           <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
             <div className="w-full max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-center my-8">
@@ -3825,6 +4084,17 @@ void loop()
           </div>
         );
       }
+
+    return (
+      <div className="flex-1 flex items-center justify-center p-10 text-center opacity-40">
+        <div className="flex flex-col items-center gap-4">
+          <Aperture className="w-12 h-12 animate-spin-slow text-slate-600" />
+          <p className="text-xs font-black tracking-widest uppercase text-slate-500">
+            Select an Operation / בחר פעולה מהתפריט
+          </p>
+        </div>
+      </div>
+    );
     };
 
   if (showSplash) {
