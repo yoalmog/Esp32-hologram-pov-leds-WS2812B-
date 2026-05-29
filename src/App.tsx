@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef, memo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { BleClient } from '@capacitor-community/bluetooth-le';
 import { Network } from '@capacitor/network';
-import { Camera as CapacitorCamera } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
 import { Filesystem } from '@capacitor/filesystem';
 import { usePermissions } from "./hooks/usePermissions";
@@ -63,7 +62,6 @@ import {
   Mic,
   FolderOpen,
   ShieldAlert,
-  Camera,
 } from "lucide-react";
 import { GalaxyBackground } from "./components/GalaxyBackground";
 import { HologramSimulator } from "./components/HologramSimulator";

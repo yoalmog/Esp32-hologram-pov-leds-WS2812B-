@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
 import { BleClient } from '@capacitor-community/bluetooth-le';
-import { Camera } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
 import { Filesystem } from '@capacitor/filesystem';
 
 export function usePermissions() {
   const [permissions, setPermissions] = useState({
     ble: false,
-    camera: false,
     geolocation: false,
     filesystem: false,
     isRequesting: true
@@ -16,20 +14,13 @@ export function usePermissions() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const perms = { ble: false, camera: false, geolocation: false, filesystem: false, isRequesting: true };
+      const perms = { ble: false, geolocation: false, filesystem: false, isRequesting: true };
       
       try {
         await BleClient.initialize({ androidNeverForLocation: true });
         perms.ble = true;
       } catch (err) {
         console.warn('BLE permission failed or not supported:', err);
-      }
-      
-      try {
-        const cam = await Camera.requestPermissions();
-        perms.camera = cam.camera === 'granted' || cam.photos === 'granted';
-      } catch (err) {
-        console.warn('Camera permission failed or not supported:', err);
       }
       
       try {

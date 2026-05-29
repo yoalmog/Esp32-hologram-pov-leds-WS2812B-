@@ -2,7 +2,6 @@
   "name": "HoloSpin",
   "description": "An interface for controlling ESP32 Persistence of Vision devices.",
   "requestFramePermissions": [
-    "camera",
     "microphone",
     "geolocation"
   ],

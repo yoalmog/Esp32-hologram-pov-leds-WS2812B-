@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BleClient } from '@capacitor-community/bluetooth-le';
-import { Camera } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
 import { Network } from '@capacitor/network';
-import { ShieldCheck, ShieldAlert, Wifi, Bluetooth, Camera as CameraIcon, MapPin } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Wifi, Bluetooth, MapPin } from 'lucide-react';
 
 interface Props {
   onComplete: () => void;
@@ -13,7 +12,6 @@ interface Props {
 export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
   const [status, setStatus] = useState<Record<string, 'pending' | 'granted' | 'denied' | 'error'>>({
     bluetooth: 'pending',
-    camera: 'pending',
     location: 'pending',
     network: 'pending'
   });
@@ -44,15 +42,7 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
       }
     }
 
-    // 2. Camera
-    try {
-      const p = await Camera.requestPermissions();
-      setStatus(s => ({ ...s, camera: p.camera === 'granted' ? 'granted' : 'denied' }));
-    } catch (e) {
-      setStatus(s => ({ ...s, camera: 'denied' }));
-    }
-
-    // 3. Location (Crucial for BLE scanning on Android)
+    // 2. Location (Crucial for BLE scanning on Android)
     try {
       const p = await Geolocation.requestPermissions();
       const granted = p.location === 'granted' || p.coarseLocation === 'granted';
@@ -113,11 +103,6 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
             icon={<MapPin className="w-4 h-4" />} 
             label="Hardware Location" 
             status={status.location} 
-          />
-          <PermissionRow 
-            icon={<CameraIcon className="w-4 h-4" />} 
-            label="Diagnostic Camera" 
-            status={status.camera} 
           />
           <PermissionRow 
             icon={<Wifi className="w-4 h-4" />} 
