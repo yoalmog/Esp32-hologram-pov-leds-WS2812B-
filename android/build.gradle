@@ -1,6 +1,7 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
+    
     repositories {
         google()
         mavenCentral()
@@ -25,30 +26,21 @@ allprojects {
 
 subprojects {
     afterEvaluate { project ->
-        // הגדרת תאימות Java עבור מודולים מבוססי אנדרואיד באופן בטוח
         if (project.hasProperty('android')) {
-            android {
+            project.android {
                 compileOptions {
-                    sourceCompatibility = JavaVersion.VERSION_17
-                    targetCompatibility = JavaVersion.VERSION_17
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
                 }
             }
         }
-        
-        // הגדרת קומפילציית Java רגילה לכל המשימות הרלוונטיות
-        tasks.withType(JavaCompile) {
+        project.tasks.withType(JavaCompile).configureEach {
             sourceCompatibility = '17'
             targetCompatibility = '17'
         }
-
-        // הגדרה דינמית של יעד קוטלין (Kotlin) ללא תלות בשם הפלאגין
-        tasks.configureEach { task ->
-            if (task.name.startsWith("compile") && task.name.endsWith("Kotlin")) {
-                try {
-                    task.kotlinOptions.jvmTarget = "17"
-                } catch (Exception e) {
-                    // דילוג בטוח במידה והמשימה הספציפית אינה תומכת במאפיין זה
-                }
+        project.tasks.configureEach { task ->
+            if (task.name.contains("Kotlin") && task.hasProperty("kotlinOptions")) {
+                task.kotlinOptions.jvmTarget = "17"
             }
         }
     }
