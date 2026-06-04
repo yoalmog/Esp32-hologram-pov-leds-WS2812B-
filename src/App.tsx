@@ -2204,10 +2204,6 @@ export default function App() {
 
     if (subPage === "firmware") {
       const missingFields: string[] = [];
-      if (!state.wifi?.ssid?.trim()) missingFields.push("Wi-Fi (AP) SSID / שם רשת חמה");
-      if (!state.wifi?.pass?.trim()) missingFields.push("Wi-Fi (AP) Password / סיסמת רשת חמה");
-      if (!state.wifi?.routerSsid?.trim()) missingFields.push("Wi-Fi (Router) SSID / שם ראוטר");
-      if (!state.wifi?.routerPass?.trim()) missingFields.push("Wi-Fi (Router) Password / סיסמת ראוטר");
       if (!state.led?.pins?.trim()) missingFields.push("LED Strip Pins / פיני חיבור לדים");
       if (!state.led?.ledsPerStrip) missingFields.push("LED Count / כמות לדים (Pixel Count)");
       if (!state.sync?.sensorPin?.toString().trim()) missingFields.push("Hall Sensor Pin / פין חיישן טייל");
@@ -2315,6 +2311,7 @@ const char* PLAYBACK_FILES[PLAYBACK_FILE_COUNT] = {
   - חיישן הול לפין 27 כאינטראפט
   - מנוע מחובר לפין 14 (PWM בבקרת מהירות)
   - בלוטות' חיצוני HC-05 Classic מחובר ל-Serial2 (RX=16, TX=17) במהירות 9600bps
+  - BLE GATT Server עבור חיבור אפליקציות ניידות
   ===================================================================
 */
 
@@ -2322,15 +2319,40 @@ const char* PLAYBACK_FILES[PLAYBACK_FILE_COUNT] = {
 #include <WebServer.h>
 #include <ElegantOTA.h>
 #include <NeoPixelBus.h>
+#include <NimBLEDevice.h>
+#include <ArduinoJson.h>
 #include "Config.h"
+
+// =====================================================
+// BLE GATT UUIDS
+// =====================================================
+#define SERVICE_UUID        "0000aaaa-0000-1000-8000-00805f9b34fb"
+#define CHARACTERISTIC_TX   "0000bbbb-0000-1000-8000-00805f9b34fb" // Device → App (Notifications)
+#define CHARACTERISTIC_RX   "0000cccc-0000-1000-8000-00805f9b34fb" // App → Device (Write)
+
+// =====================================================
+// LED STRIPS
+// =====================================================
 
 NeoPixelBus<NeoGrbFeature, NeoEsp32Rmt0Ws2812xMethod> strip1(PIXEL_COUNT, PIN_STRIP1);
 NeoPixelBus<NeoGrbFeature, NeoEsp32Rmt1Ws2812xMethod> strip2(PIXEL_COUNT, PIN_STRIP2);
 
+// =====================================================
+// SERVER & BLE
+// =====================================================
+
 WebServer server(80);
+NimBLECharacteristic *pTxCharacteristic;
+NimBLECharacteristic *pRxCharacteristic;
+bool bleConnected = false;
+
+// =====================================================
+// GLOBALS & EFFECTS DEF
+// =====================================================
+
 bool ledState = true;
 uint8_t ledR = 255, ledG = 0, ledB = 0;
-bool bluetoothConnected = false;
+bool bluetoothConnected = false; // HC-05 classic status
 
 enum EffectType { 
     EFFECT_CLOCK, 
@@ -2359,6 +2381,106 @@ EffectType currentEffect = EFFECT_RAINBOW;
 volatile unsigned long lastHallTrigger = 0;
 volatile unsigned long revolutionTime = 40000;
 
+// =====================================================
+// BLE CALLBACKS
+// =====================================================
+
+class ServerCallbacks: public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
+      bleConnected = true;
+      Serial.println("[BLE] Client connected!");
+    };
+
+    void onDisconnect(NimBLEServer* pServer) {
+      bleConnected = false;
+      Serial.println("[BLE] Client disconnected");
+      pServer->startAdvertising();
+    };
+};
+
+class RxCallbacks: public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic) {
+      std::string rxValue = pCharacteristic->getValue();
+      if (rxValue.length() > 0) {
+        String cmd = String(rxValue.c_str());
+        Serial.print("[BLE RX] ");
+        Serial.println(cmd);
+        processIncomingCommand(cmd);
+        
+        // Send acknowledgment back to app
+        sendBleStatus();
+      }
+    };
+};
+
+// =====================================================
+// BLE HELPERS
+// =====================================================
+
+void sendBleStatus() {
+  if (!bleConnected || !pTxCharacteristic) return;
+  
+  StaticJsonDocument<256> doc;
+  doc["rpm"] = revolutionTime > 0 ? (60000000.0f / revolutionTime) : 0;
+  doc["status"] = ledState ? "active" : "standby";
+  doc["effect"] = (int)currentEffect;
+  doc["led_r"] = ledR;
+  doc["led_g"] = ledG;
+  doc["led_b"] = ledB;
+  doc["ble"] = "connected";
+  
+  String jsonStr;
+  serializeJson(doc, jsonStr);
+  
+  pTxCharacteristic->setValue(jsonStr);
+  pTxCharacteristic->notify();
+  
+  Serial.print("[BLE TX] ");
+  Serial.println(jsonStr);
+}
+
+void initBLE() {
+  Serial.println("[BLE] Initializing BLE...");
+  
+  // Create BLE Device
+  NimBLEDevice::init("ESP32");
+  
+  // Create BLE Server
+  NimBLEServer *pServer = NimBLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+
+  // Create BLE Service
+  NimBLEService *pService = pServer->createService(SERVICE_UUID);
+
+  // Create TX Characteristic (Device → App, Notifications)
+  pTxCharacteristic = pService->createCharacteristic(
+      CHARACTERISTIC_TX,
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+  );
+  pTxCharacteristic->createDescriptor("2902"); // CCCD for notifications
+
+  // Create RX Characteristic (App → Device, Write)
+  pRxCharacteristic = pService->createCharacteristic(
+      CHARACTERISTIC_RX,
+      NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
+  );
+  pRxCharacteristic->setCallbacks(new RxCallbacks());
+
+  // Start the service
+  pService->start();
+
+  // Start advertising
+  NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->start();
+
+  Serial.println("[BLE] BLE Service started - Advertising as 'ESP32'");
+}
+
+// =====================================================
+// HALL SENSOR ISR
+// =====================================================
+
 void IRAM_ATTR hallISR() {
     unsigned long now = micros();
     unsigned long diff = now - lastHallTrigger;
@@ -2368,8 +2490,13 @@ void IRAM_ATTR hallISR() {
     }
 }
 
+// =====================================================
+// EFFECT SELECTION HELPER
+// =====================================================
+
 bool setEffectByName(String name) {
-    name.trim(); name.toLowerCase();
+    name.trim(); 
+    name.toLowerCase();
     if (name.startsWith("effect:")) name = name.substring(7);
     if (name == "clock" || name == "0" || name == "effect_clock") { currentEffect = EFFECT_CLOCK; return true; }
     if (name == "rainbow" || name == "1" || name == "effect_rainbow") { currentEffect = EFFECT_RAINBOW; return true; }
@@ -2393,6 +2520,10 @@ bool setEffectByName(String name) {
     if (name == "solid" || name == "19") { currentEffect = EFFECT_SOLID; return true; }
     return false;
 }
+
+// =====================================================
+// RENDERING ENGINE
+// =====================================================
 
 RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
     float r = (float)ledIdx / (float)PIXEL_COUNT;
@@ -2573,49 +2704,89 @@ void processIncomingCommand(String cmd) {
     }
 }
 
+// =====================================================
+// SETUP
+// =====================================================
+
 void setup() {
     Serial.begin(115200);
+    delay(2000);
+    Serial.println("\\n\\n=== HOLOSPIN POV 3D FIRMWARE START ===\\n");
+    
     pinMode(HALL_PIN, INPUT_PULLUP);
     pinMode(MOTOR_PIN, OUTPUT);
     attachInterrupt(digitalPinToInterrupt(HALL_PIN), hallISR, FALLING);
 
-    strip1.Begin(); strip1.Show();
-    strip2.Begin(); strip2.Show();
+    strip1.Begin(); 
+    strip1.Show();
+    strip2.Begin(); 
+    strip2.Show();
+    Serial.println("[SETUP] LEDs initialized");
 
     // Init Serial2 for HC-05 Classic Bluetooth Module
     Serial2.begin(HC05_BAUD, SERIAL_8N1, HC05_RX_PIN, HC05_TX_PIN);
     bluetoothConnected = true;
+    Serial.println("[SETUP] HC-05 Classic Bluetooth initialized");
 
+    // Init WiFi
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(AP_SSID, AP_PASS, 1, false, 4);
+    Serial.println("[SETUP] WiFi AP mode enabled");
 
+    // Init Web Server
     server.on("/toggle", HTTP_GET, []() {
         ledState = !ledState;
         server.send(200, "text/plain", "OK");
     });
-
     ElegantOTA.begin(&server);
     server.begin();
+    Serial.println("[SETUP] Web server started");
+
+    // Init BLE
+    initBLE();
+    
+    Serial.println("\\n=== SETUP COMPLETE - READY FOR POV ===\\n");
 }
 
+// =====================================================
+// MAIN LOOP
+// =====================================================
+
+unsigned long lastBleStatusTime = 0;
+
 void loop() {
+    // Handle web server
+    server.handleClient();
+    ElegantOTA.loop();
+    
+    // Send periodic BLE status updates (every 1 second)
+    if (bleConnected && (millis() - lastBleStatusTime > 1000)) {
+        sendBleStatus();
+        lastBleStatusTime = millis();
+    }
+    
+    // Handle HC-05 serial commands
+    if (Serial2.available() > 0) {
+        String incoming = Serial2.readStringUntil('\\n');
+        processIncomingCommand(incoming);
+    }
+    
+    // POV rendering
     unsigned long now = micros();
     unsigned long elapsed = now - lastHallTrigger;
     if (elapsed > 1000000) { 
         revolutionTime = 40000;
         elapsed = elapsed % revolutionTime;
     }
+    
     float angle = (float)elapsed / (float)revolutionTime * 360.0f;
     renderPOV(angle, millis());
     strip1.Show();
     strip2.Show();
     
-    if (Serial2.available() > 0) {
-        String incoming = Serial2.readStringUntil('\n');
-        processIncomingCommand(incoming);
-    }
     delayMicroseconds(50);
-}`;
+}
+`;
 
       const downloadFile = (filename: string, content: string) => {
         try {

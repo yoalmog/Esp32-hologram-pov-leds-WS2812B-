@@ -1,498 +1,203 @@
 /* 
-  ===================================================================
-  HOLOSPIN POV 3D - HARDWARE FIRMWARE (גרסת חומרה מעודכנת)
-  מפרט:
-  - 45 לדים בכל זרוע (שתי זרועות לד מוגדרות)
-  - זרוע 1 מחוברת לפין 25, זרוע 2 מחוברת לפין 26
-  - חיישן הול לפין 27 כאינטראפט
-  - מנוע מחובר לפין 14 (PWM בבקרת מהירות)
-  - בלוטות' חיצוני HC-05 Classic מחובר ל-Serial2 (RX=16, TX=17) במהירות 9600bps
-  - BLE GATT Server עבור חיבור אפליקציות ניידות
-  ===================================================================
-*/
+ * HOLOSPIN PRO - CORE FIRMWARE (ENGINEERING VERIFICATION)
+ * Target: ESP32-WROOM-32 / ESP32-S3
+ * Libraries: FastLED, ESPAsyncWebServer, BLEDevice, LittleFS
+ */
 
-#include <WiFi.h>
-#include <WebServer.h>
-#include <ElegantOTA.h>
-#include <NeoPixelBus.h>
-#include <NimBLEDevice.h>
+#include <Arduino.h>
+#include <FastLED.h>
+#include <ESPAsyncWebServer.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLE2902.h>
+#include <LittleFS.h>
 #include <ArduinoJson.h>
-#include "Config.h"
 
-// =====================================================
-// BLE GATT UUIDS
-// =====================================================
-#define SERVICE_UUID        "0000aaaa-0000-1000-8000-00805f9b34fb"
-#define CHARACTERISTIC_TX   "0000bbbb-0000-1000-8000-00805f9b34fb" // Device → App (Notifications)
-#define CHARACTERISTIC_RX   "0000cccc-0000-1000-8000-00805f9b34fb" // App → Device (Write)
+// --- HARDWARE CONFIGURATION ---
+#define LED_PIN 13
+#define MOTOR_PIN 14
+#define HALL_PIN 12
+#define NUM_LEDS 256
+#define MAX_RPM 1800
 
-// =====================================================
-// LED STRIPS
-// =====================================================
+CRGB leds[NUM_LEDS];
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
 
-NeoPixelBus<NeoGrbFeature, NeoEsp32Rmt0Ws2812xMethod> strip1(PIXEL_COUNT, PIN_STRIP1);
-NeoPixelBus<NeoGrbFeature, NeoEsp32Rmt1Ws2812xMethod> strip2(PIXEL_COUNT, PIN_STRIP2);
+// --- BLE UUIDS ---
+#define SERVICE_UUID           "0000aaaa-0000-1000-8000-00805f9b34fb"
+#define CHARACTERISTIC_UUID_TX "0000bbbb-0000-1000-8000-00805f9b34fb" // Telemetry
+#define CHARACTERISTIC_UUID_RX "0000cccc-0000-1000-8000-00805f9b34fb" // Commands
 
-// =====================================================
-// SERVER & BLE
-// =====================================================
+BLECharacteristic *pTxCharacteristic;
+bool deviceConnected = false;
 
-WebServer server(80);
-NimBLECharacteristic *pTxCharacteristic;
-NimBLECharacteristic *pRxCharacteristic;
-bool bleConnected = false;
+// --- STATE VARIABLES ---
+volatile uint32_t lastHallTime = 0;
+volatile uint32_t currentRpm = 0;
+uint8_t globalBrightness = 128;
+bool isCalibrated = false;
 
-// =====================================================
-// GLOBALS & EFFECTS DEF
-// =====================================================
+// --- HALL SENSOR / RPM CALCULATION ---
+void IRAM_ATTR onHallInterrupt() {
+    uint32_t now = micros();
+    uint32_t delta = now - lastHallTime;
+    if (delta > 2000) { // Debounce 2ms
+        currentRpm = 60000000 / delta;
+        lastHallTime = now;
+    }
+}
 
-bool ledState = true;
-uint8_t ledR = 255, ledG = 0, ledB = 0;
-bool bluetoothConnected = false; // HC-05 classic status
-
-enum EffectType { 
-    EFFECT_CLOCK, 
-    EFFECT_RAINBOW, 
-    EFFECT_FIRE, 
-    EFFECT_MATRIX, 
-    EFFECT_HYPNO, 
-    EFFECT_SPACE,
-    EFFECT_MANDALA,
-    EFFECT_ACID,
-    EFFECT_PLASMA,
-    EFFECT_PORTAL,
-    EFFECT_DNA,
-    EFFECT_MUSHROOMS,
-    EFFECT_ALIEN,
-    EFFECT_CUBE3D,
-    EFFECT_KALEIDO,
-    EFFECT_VIDEO_SYNTH,
-    EFFECT_ANIME_FLOW,
-    EFFECT_POV_TEXT,
-    EFFECT_LOGO,
-    EFFECT_SOLID 
-};
-EffectType currentEffect = EFFECT_RAINBOW;
-
-volatile unsigned long lastHallTrigger = 0;
-volatile unsigned long revolutionTime = 40000;
-
-// =====================================================
-// BLE CALLBACKS
-// =====================================================
-
-class ServerCallbacks: public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
-      bleConnected = true;
-      Serial.println("[BLE] ✓ Client connected!");
-    };
-
-    void onDisconnect(NimBLEServer* pServer) {
-      bleConnected = false;
-      Serial.println("[BLE] ✗ Client disconnected - Resuming advertising");
-      pServer->startAdvertising();
-    };
-};
-
-class RxCallbacks: public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic* pCharacteristic) {
-      std::string rxValue = pCharacteristic->getValue();
-      if (rxValue.length() > 0) {
-        String cmd = String(rxValue.c_str());
-        Serial.print("[BLE RX] ");
-        Serial.println(cmd);
-        processIncomingCommand(cmd);
+// --- TASK: RENDERING ENGINE (Core 1) ---
+void renderTask(void *pvParameters) {
+    FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+    FastLED.setBrightness(globalBrightness);
+    
+    for (;;) {
+        // Calculate rendering offset based on RPM and Micros()
+        // Synchronization logic for POV display
+        if (currentRpm > 100) {
+            // POV Render Logic Here
+        }
         
-        // Send acknowledgment back to app
-        sendBleStatus();
-      }
+        FastLED.show();
+        vTaskDelay(1); // Yield to IDLE
+    }
+}
+
+// --- TASK: NETWORKING & TELEMETRY (Core 0) ---
+void networkTask(void *pvParameters) {
+    for (;;) {
+        if (deviceConnected) {
+            StaticJsonDocument<128> doc;
+            doc["rpm"] = currentRpm;
+            doc["temp"] = temperatureRead(); // Internal ESP32 sensor
+            doc["sync"] = isCalibrated;
+            
+            char buffer[128];
+            serializeJson(doc, buffer);
+            pTxCharacteristic->setValue(buffer);
+            pTxCharacteristic->notify();
+        }
+        vTaskDelay(pdMS_TO_TICKS(100)); // 10Hz Telemetry
+    }
+}
+
+// --- BLE SERVER CALLBACKS ---
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
     };
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+      BLEDevice::startAdvertising(); // Restart advertising on disconnect
+    }
 };
 
-// =====================================================
-// BLE HELPERS
-// =====================================================
-
-void sendBleStatus() {
-  if (!bleConnected || !pTxCharacteristic) return;
-  
-  StaticJsonDocument<256> doc;
-  doc["rpm"] = revolutionTime > 0 ? (60000000.0f / revolutionTime) : 0;
-  doc["status"] = ledState ? "active" : "standby";
-  doc["effect"] = (int)currentEffect;
-  doc["led_r"] = ledR;
-  doc["led_g"] = ledG;
-  doc["led_b"] = ledB;
-  doc["ble"] = "connected";
-  
-  String jsonStr;
-  serializeJson(doc, jsonStr);
-  
-  pTxCharacteristic->setValue(jsonStr);
-  pTxCharacteristic->notify();
-  
-  Serial.print("[BLE TX] ");
-  Serial.println(jsonStr);
-}
-
-void initBLE() {
-  Serial.println("\n[BLE] ========== INITIALIZING BLE ==========");
-  
-  // Create BLE Device with name
-  NimBLEDevice::init("ESP32");
-  Serial.println("[BLE] ✓ Device initialized as 'ESP32'");
-  
-  // Create BLE Server
-  NimBLEServer *pServer = NimBLEDevice::createServer();
-  pServer->setCallbacks(new ServerCallbacks());
-  Serial.println("[BLE] ✓ Server created");
-
-  // Create BLE Service
-  NimBLEService *pService = pServer->createService(SERVICE_UUID);
-  Serial.println("[BLE] ✓ Service created (UUID: 0000aaaa...)");
-
-  // Create TX Characteristic (Device → App, Notifications)
-  pTxCharacteristic = pService->createCharacteristic(
-      CHARACTERISTIC_TX,
-      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
-  );
-  pTxCharacteristic->createDescriptor("2902"); // CCCD for notifications
-  Serial.println("[BLE] ✓ TX Characteristic created (0000bbbb...)");
-
-  // Create RX Characteristic (App → Device, Write)
-  pRxCharacteristic = pService->createCharacteristic(
-      CHARACTERISTIC_RX,
-      NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
-  );
-  pRxCharacteristic->setCallbacks(new RxCallbacks());
-  Serial.println("[BLE] ✓ RX Characteristic created (0000cccc...)");
-
-  // Start the service
-  pService->start();
-  Serial.println("[BLE] ✓ Service started");
-
-  // Start advertising with proper settings
-  NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setAppearance(0);
-  pAdvertising->start();
-  
-  Serial.println("[BLE] ✓ Advertising started");
-  Serial.println("[BLE] ========== BLE READY ==========");
-  Serial.println("[BLE] Scan for device named: ESP32");
-  Serial.println();
-}
-
-// =====================================================
-// HALL SENSOR ISR
-// =====================================================
-
-void IRAM_ATTR hallISR() {
-    unsigned long now = micros();
-    unsigned long diff = now - lastHallTrigger;
-    if (diff > 4000) {
-        revolutionTime = diff;
-        lastHallTrigger = now;
+class MyCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      std::string value = pCharacteristic->getValue();
+      if (value.length() > 0) {
+        StaticJsonDocument<512> doc;
+        deserializeJson(doc, value.c_str());
+        if (doc.containsKey("brightness")) {
+            globalBrightness = doc["brightness"];
+            FastLED.setBrightness(globalBrightness);
+        }
+        if (doc.containsKey("motorSpeed")) {
+            analogWrite(MOTOR_PIN, doc["motorSpeed"]);
+        }
+      }
     }
-}
+};
 
-// =====================================================
-// EFFECT SELECTION HELPER
-// =====================================================
+// --- API: ENDPOINT HANDLERS ---
+void setupServerTransitions() {
+    server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        StaticJsonDocument<512> doc;
+        doc["status"] = "ready";
+        doc["rpm"] = currentRpm;
+        doc["temp"] = 38.5; // Placeholder for logic
+        doc["wifi_mode"] = WiFi.getMode() == WIFI_AP ? "AP" : "STA";
+        doc["sync"] = isCalibrated;
+        serializeJson(doc, *response);
+        request->send(response);
+    });
 
-bool setEffectByName(String name) {
-    name.trim(); 
-    name.toLowerCase();
-    if (name.startsWith("effect:")) name = name.substring(7);
-    if (name == "clock" || name == "0" || name == "effect_clock") { currentEffect = EFFECT_CLOCK; return true; }
-    if (name == "rainbow" || name == "1" || name == "effect_rainbow") { currentEffect = EFFECT_RAINBOW; return true; }
-    if (name == "fire" || name == "2" || name == "effect_fire") { currentEffect = EFFECT_FIRE; return true; }
-    if (name == "matrix" || name == "3" || name == "effect_matrix") { currentEffect = EFFECT_MATRIX; return true; }
-    if (name == "hypno" || name == "4" || name == "effect_hypno") { currentEffect = EFFECT_HYPNO; return true; }
-    if (name == "space" || name == "5" || name == "effect_space") { currentEffect = EFFECT_SPACE; return true; }
-    if (name == "mandala" || name == "6" || name == "effect_mandala") { currentEffect = EFFECT_MANDALA; return true; }
-    if (name == "acid" || name == "7" || name == "effect_acid") { currentEffect = EFFECT_ACID; return true; }
-    if (name == "plasma" || name == "8" || name == "effect_plasma") { currentEffect = EFFECT_PLASMA; return true; }
-    if (name == "portal" || name == "9" || name == "effect_portal") { currentEffect = EFFECT_PORTAL; return true; }
-    if (name == "dna" || name == "10" || name == "effect_dna") { currentEffect = EFFECT_DNA; return true; }
-    if (name == "mushrooms" || name == "11" || name == "effect_mushrooms") { currentEffect = EFFECT_MUSHROOMS; return true; }
-    if (name == "alien" || name == "12" || name == "effect_alien") { currentEffect = EFFECT_ALIEN; return true; }
-    if (name == "cube3d" || name == "13" || name == "effect_cube3d") { currentEffect = EFFECT_CUBE3D; return true; }
-    if (name == "kaleido" || name == "14" || name == "effect_kaleido") { currentEffect = EFFECT_KALEIDO; return true; }
-    if (name == "synth" || name == "15" || name == "effect_video_synth") { currentEffect = EFFECT_VIDEO_SYNTH; return true; }
-    if (name == "anime" || name == "16" || name == "effect_anime_flow") { currentEffect = EFFECT_ANIME_FLOW; return true; }
-    if (name == "text" || name == "17" || name == "effect_pov_text") { currentEffect = EFFECT_POV_TEXT; return true; }
-    if (name == "logo" || name == "18" || name == "effect_logo") { currentEffect = EFFECT_LOGO; return true; }
-    if (name == "solid" || name == "19") { currentEffect = EFFECT_SOLID; return true; }
-    return false;
-}
-
-// =====================================================
-// RENDERING ENGINE
-// =====================================================
-
-RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
-    float r = (float)ledIdx / (float)PIXEL_COUNT;
-    switch (currentEffect) {
-        case EFFECT_CLOCK: {
-            float hourAngle = (float)((timeMs / 1000) % 60) * 6.0f;
-            if (abs(angle - hourAngle) < 3.0f) return RgbColor(255, 0, 0);
-            return RgbColor(0, 0, 10);
+    server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+        int n = WiFi.scanNetworks();
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(2048);
+        JsonArray array = doc.to<JsonArray>();
+        for (int i = 0; i < n; ++i) {
+            JsonObject obj = array.createNestedObject();
+            obj["ssid"] = WiFi.SSID(i);
+            obj["signal"] = WiFi.RSSI(i);
+            obj["secure"] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
         }
-        case EFFECT_RAINBOW: {
-            float hue = fmod(angle + r * 100.0f + (float)timeMs * 0.05f, 360.0f) / 360.0f;
-            uint8_t component = (uint8_t)(hue * 255);
-            return RgbColor(component, 255 - component, 128);
-        }
-        case EFFECT_FIRE: {
-            float noise = sin(r * 15.0f - (float)timeMs * 0.008f) * 0.5f + 0.5f;
-            if (r < noise) {
-                if (r < 0.3f) return RgbColor(255, 255, 100);
-                return RgbColor(180, 0, 0);
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.on("/control", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, 
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            StaticJsonDocument<512> doc;
+            deserializeJson(doc, (const char*)data);
+            if (doc.containsKey("motorSpeed")) {
+                analogWrite(MOTOR_PIN, doc["motorSpeed"]);
             }
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_MATRIX: {
-            int column = (int)(angle / 15.0f);
-            float offset = (float)((timeMs / 15) % 100) / 100.0f;
-            float bulletPos = offset + (float)(column % 5) * 0.2f;
-            if (bulletPos > 1.0f) bulletPos -= 1.0f;
-            float dist = abs(r - bulletPos);
-            if (dist < 0.15f) return RgbColor(0, (uint8_t)((1.0f - (dist / 0.15f)) * 255), 0);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_HYPNO: {
-            float val = sin(r * 15.0f - angle * DEG_TO_RAD * 2.0f + (float)timeMs * 0.008f);
-            if (val > 0.4f) return RgbColor(140, 0, 255);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_SPACE: {
-            float star1 = sin((angle + (float)timeMs * 0.08f) * DEG_TO_RAD * 6.0f);
-            if (star1 > 0.95f) return RgbColor(255, 255, 255);
-            float nebula = sin(r * 5.0f + angle * DEG_TO_RAD * 3.0f);
-            if (nebula > 0.8f) return RgbColor(12, 16, 45);
-            return RgbColor(0, 0, 1);
-        }
-        case EFFECT_MANDALA: {
-            float val = cos(angle * DEG_TO_RAD * 6.0f) * 0.25f + 0.55f;
-            if (abs(r - val) < 0.08f) return RgbColor(45, 212, 191);
-            float radialLines = sin(r * 25.0f);
-            if (radialLines > 0.92f && r < val) return RgbColor(20, 80, 70);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_ACID: {
-            float t = (float)timeMs * 0.004f;
-            return RgbColor(
-                (uint8_t)((sin(angle * DEG_TO_RAD + t) * 0.5f + 0.5f) * 255),
-                (uint8_t)((sin(r * 6.28f + t * 1.5f) * 0.5f + 0.5f) * 255),
-                (uint8_t)((cos(angle * DEG_TO_RAD * 3.0f - t) * 0.5f + 0.5f) * 255)
-            );
-        }
-        case EFFECT_PLASMA: {
-            float t = (float)timeMs * 0.003f;
-            float x = r * cos(angle * DEG_TO_RAD);
-            float y = r * sin(angle * DEG_TO_RAD);
-            float claim = sin(x * 5.0f + t) + sin(y * 5.0f + t);
-            float pVal = claim / 2.0f * 0.5f + 0.5f;
-            return RgbColor((uint8_t)(pVal * 255), 0, (uint8_t)((1.0f - pVal) * 255));
-        }
-        case EFFECT_PORTAL: {
-            float radius = 0.6f + sin((angle * 6.0f * DEG_TO_RAD) + (float)timeMs * 0.012f) * 0.05f;
-            if (abs(r - radius) < 0.08f) {
-                if (angle < 180.0f) return RgbColor(0, 140, 255);
-                return RgbColor(255, 90, 0);
+            if (doc.containsKey("brightness")) {
+                globalBrightness = doc["brightness"];
+                FastLED.setBrightness(globalBrightness);
             }
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_DNA: {
-            float rot = (float)timeMs * 0.004f;
-            float dnaAngle1 = sin(r * 6.0f - rot) * 40.0f + 180.0f;
-            float dnaAngle2 = sin(r * 6.0f - rot + 3.14f) * 40.0f + 180.0f;
-            if (abs(angle - dnaAngle1) < 4.0f) return RgbColor(244, 63, 94);
-            if (abs(angle - dnaAngle2) < 4.0f) return RgbColor(59, 130, 246);
-            if (abs(dnaAngle1 - dnaAngle2) > 10.0f && angle > min(dnaAngle1, dnaAngle2) && angle < max(dnaAngle1, dnaAngle2) && fmod(r * 15.0f, 1.0f) < 0.2f) {
-                return RgbColor(255, 255, 255);
-            }
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_MUSHROOMS: {
-            if (r > 0.4f && r < 0.8f && abs(angle - 120.0f) < 15.0f) return RgbColor(251, 113, 133);
-            if (r <= 0.4f && abs(angle - 120.0f) < 5.0f) return RgbColor(255, 255, 255);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_ALIEN: {
-            if (r > 0.2f && r < 0.7f && abs(angle - 180.0f) < 45.0f) return RgbColor(134, 239, 172);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_CUBE3D: {
-            if (r > 0.3f && r < 0.6f) return RgbColor(0, 255, 255);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_KALEIDO: {
-            float t = (float)timeMs * 0.002f;
-            float mirrorAngle = fmod(angle, 60.0f);
-            if (mirrorAngle > 30.0f) mirrorAngle = 60.0f - mirrorAngle;
-            float val = sin(r * 12.0f + mirrorAngle * DEG_TO_RAD * 10.0f + t);
-            if (val > 0.3f) return RgbColor(255, 105, 180);
-            return RgbColor(0, 0, 30);
-        }
-        case EFFECT_VIDEO_SYNTH: {
-            float val = sin(angle * DEG_TO_RAD * 3.0f + (float)timeMs * 0.01f);
-            float center = 0.5f + val * 0.3f;
-            float width = 0.08f;
-            float dist = abs(r - center);
-            if (dist < width) return RgbColor(0, 255, 255);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_ANIME_FLOW: {
-            float fastAngle = angle + (float)timeMs * 0.12f;
-            float stream = sin(fastAngle * DEG_TO_RAD * 4.0f);
-            if (stream > 0.8f) return RgbColor((uint8_t)(r * 255), 180, 255);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_POV_TEXT: {
-            int letterIndex = (int)(angle / 20.0f);
-            if (letterIndex >= 0 && letterIndex < 8) {
-                if (r > 0.3f && r < 0.7f) return RgbColor(255, 255, 0);
-            }
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_LOGO: {
-            if (r > 0.45f && r < 0.55f) return RgbColor(0, 229, 255);
-            if (r > 0.2f && r < 0.25f && abs(angle - 180.0f) < 30.0f) return RgbColor(255, 255, 255);
-            return RgbColor(0, 0, 0);
-        }
-        case EFFECT_SOLID:
-        default:
-            return RgbColor(ledR, ledG, ledB);
-    }
+            request->send(200, "application/json", "{\"status\":\"ok\"}");
+    });
 }
-
-void renderPOV(float angle, unsigned long timeMs) {
-    if (!ledState) {
-        strip1.ClearTo(RgbColor(0));
-        strip2.ClearTo(RgbColor(0));
-        return;
-    }
-    float angle2 = angle + 180.0f;
-    if (angle2 >= 360.0f) angle2 -= 360.0f;
-    for (int i = 0; i < PIXEL_COUNT; i++) {
-        strip1.SetPixelColor(i, getEffectColor(i, angle, timeMs));
-        strip2.SetPixelColor(i, getEffectColor(i, angle2, timeMs));
-    }
-}
-
-void processIncomingCommand(String cmd) {
-    cmd.trim();
-    if (cmd.length() == 0) return;
-    String upperValue = cmd;
-    upperValue.toUpperCase();
-
-    if (upperValue == "ON") ledState = true;
-    else if (upperValue == "OFF") ledState = false;
-    else if (upperValue.startsWith("EFFECT:") || setEffectByName(cmd)) {
-        if (upperValue.startsWith("EFFECT:")) setEffectByName(cmd.substring(7));
-    } else {
-        // Handle custom R,G,B colors
-        int r = -1, g = -1, b = -1;
-        int first  = cmd.indexOf(',');
-        int second = cmd.lastIndexOf(',');
-        if (first != -1 && second != -1 && first != second) {
-            r = cmd.substring(0, first).toInt();
-            g = cmd.substring(first + 1, second).toInt();
-            b = cmd.substring(second + 1).toInt();
-        }
-        if (r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255) {
-            ledR = r; ledG = g; ledB = b;
-            currentEffect = EFFECT_SOLID;
-            ledState = true;
-        }
-    }
-}
-
-// =====================================================
-// SETUP
-// =====================================================
 
 void setup() {
     Serial.begin(115200);
-    delay(2000);
-    Serial.println("\n\n╔═════════════════════════════════════════╗");
-    Serial.println("║   HOLOSPIN POV 3D FIRMWARE START        ║");
-    Serial.println("╚═════════════════════════════════════════╝\n");
+    LittleFS.begin();
     
+    // Hardware Setup
     pinMode(HALL_PIN, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(HALL_PIN), onHallInterrupt, FALLING);
     pinMode(MOTOR_PIN, OUTPUT);
-    attachInterrupt(digitalPinToInterrupt(HALL_PIN), hallISR, FALLING);
-
-    strip1.Begin(); 
-    strip1.Show();
-    strip2.Begin(); 
-    strip2.Show();
-    Serial.println("[SETUP] ✓ LEDs initialized (2x 45 pixels)");
-
-    // Init Serial2 for HC-05 Classic Bluetooth Module
-    Serial2.begin(HC05_BAUD, SERIAL_8N1, HC05_RX_PIN, HC05_TX_PIN);
-    bluetoothConnected = true;
-    Serial.println("[SETUP] ✓ HC-05 Classic Bluetooth initialized");
-
-    // Init WiFi
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.softAP(AP_SSID, AP_PASS, 1, false, 4);
-    Serial.println("[SETUP] ✓ WiFi AP mode enabled");
-
-    // Init Web Server
-    server.on("/toggle", HTTP_GET, []() {
-        ledState = !ledState;
-        server.send(200, "text/plain", "OK");
-    });
-    ElegantOTA.begin(&server);
-    server.begin();
-    Serial.println("[SETUP] ✓ Web server started");
-
-    // Init BLE
-    initBLE();
     
-    Serial.println("\n╔═════════════════════════════════════════╗");
-    Serial.println("║   SETUP COMPLETE - READY FOR POV       ║");
-    Serial.println("╚═════════════════════════════════════════╝\n");
+    // BLE Setup
+    BLEDevice::init("HoloSpin_PRO");
+    BLEServer *pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
+    BLEService *pService = pServer->createService(SERVICE_UUID);
+    
+    pTxCharacteristic = pService->createCharacteristic(
+        CHARACTERISTIC_UUID_TX,
+        BLECharacteristic::PROPERTY_NOTIFY
+    );
+    pTxCharacteristic->addDescriptor(new BLE2902());
+
+    BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
+        CHARACTERISTIC_UUID_RX,
+        BLECharacteristic::PROPERTY_WRITE
+    );
+    pRxCharacteristic->setCallbacks(new MyCallbacks());
+
+    pService->start();
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->setScanResponse(true);
+    BLEDevice::startAdvertising();
+
+    // WiFi Setup (AP Mode Default)
+    WiFi.softAP("HoloSpin_AP", "12345678");
+    setupServerTransitions();
+    server.begin();
+    
+    // Initialize FreeRTOS Tasks
+    xTaskCreatePinnedToCore(renderTask, "Render", 4096, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(networkTask, "Net", 4096, NULL, 1, NULL, 0);
 }
 
-// =====================================================
-// MAIN LOOP
-// =====================================================
-
-unsigned long lastBleStatusTime = 0;
-
 void loop() {
-    // Handle web server
-    server.handleClient();
-    ElegantOTA.loop();
-    
-    // Send periodic BLE status updates (every 1 second)
-    if (bleConnected && (millis() - lastBleStatusTime > 1000)) {
-        sendBleStatus();
-        lastBleStatusTime = millis();
-    }
-    
-    // Handle HC-05 serial commands
-    if (Serial2.available() > 0) {
-        String incoming = Serial2.readStringUntil('\n');
-        processIncomingCommand(incoming);
-    }
-    
-    // POV rendering
-    unsigned long now = micros();
-    unsigned long elapsed = now - lastHallTrigger;
-    if (elapsed > 1000000) { 
-        revolutionTime = 40000;
-        elapsed = elapsed % revolutionTime;
-    }
-    
-    float angle = (float)elapsed / (float)revolutionTime * 360.0f;
-    renderPOV(angle, millis());
-    strip1.Show();
-    strip2.Show();
-    
-    delayMicroseconds(50);
+    // Empty - logic handled by FreeRTOS tasks
 }
