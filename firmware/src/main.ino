@@ -84,12 +84,12 @@ volatile unsigned long revolutionTime = 40000;
 class ServerCallbacks: public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
       bleConnected = true;
-      Serial.println("[BLE] Client connected!");
+      Serial.println("[BLE] ✓ Client connected!");
     };
 
     void onDisconnect(NimBLEServer* pServer) {
       bleConnected = false;
-      Serial.println("[BLE] Client disconnected");
+      Serial.println("[BLE] ✗ Client disconnected - Resuming advertising");
       pServer->startAdvertising();
     };
 };
@@ -136,17 +136,20 @@ void sendBleStatus() {
 }
 
 void initBLE() {
-  Serial.println("[BLE] Initializing BLE...");
+  Serial.println("\n[BLE] ========== INITIALIZING BLE ==========");
   
-  // Create BLE Device
+  // Create BLE Device with name
   NimBLEDevice::init("ESP32");
+  Serial.println("[BLE] ✓ Device initialized as 'ESP32'");
   
   // Create BLE Server
   NimBLEServer *pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
+  Serial.println("[BLE] ✓ Server created");
 
   // Create BLE Service
   NimBLEService *pService = pServer->createService(SERVICE_UUID);
+  Serial.println("[BLE] ✓ Service created (UUID: 0000aaaa...)");
 
   // Create TX Characteristic (Device → App, Notifications)
   pTxCharacteristic = pService->createCharacteristic(
@@ -154,6 +157,7 @@ void initBLE() {
       NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
   );
   pTxCharacteristic->createDescriptor("2902"); // CCCD for notifications
+  Serial.println("[BLE] ✓ TX Characteristic created (0000bbbb...)");
 
   // Create RX Characteristic (App → Device, Write)
   pRxCharacteristic = pService->createCharacteristic(
@@ -161,16 +165,22 @@ void initBLE() {
       NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
   );
   pRxCharacteristic->setCallbacks(new RxCallbacks());
+  Serial.println("[BLE] ✓ RX Characteristic created (0000cccc...)");
 
   // Start the service
   pService->start();
+  Serial.println("[BLE] ✓ Service started");
 
-  // Start advertising
+  // Start advertising with proper settings
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setAppearance(0);
   pAdvertising->start();
-
-  Serial.println("[BLE] BLE Service started - Advertising as 'ESP32'");
+  
+  Serial.println("[BLE] ✓ Advertising started");
+  Serial.println("[BLE] ========== BLE READY ==========");
+  Serial.println("[BLE] Scan for device named: ESP32");
+  Serial.println();
 }
 
 // =====================================================
@@ -407,7 +417,9 @@ void processIncomingCommand(String cmd) {
 void setup() {
     Serial.begin(115200);
     delay(2000);
-    Serial.println("\n\n=== HOLOSPIN POV 3D FIRMWARE START ===\n");
+    Serial.println("\n\n╔═════════════════════════════════════════╗");
+    Serial.println("║   HOLOSPIN POV 3D FIRMWARE START        ║");
+    Serial.println("╚═════════════════════════════════════════╝\n");
     
     pinMode(HALL_PIN, INPUT_PULLUP);
     pinMode(MOTOR_PIN, OUTPUT);
@@ -417,17 +429,17 @@ void setup() {
     strip1.Show();
     strip2.Begin(); 
     strip2.Show();
-    Serial.println("[SETUP] LEDs initialized");
+    Serial.println("[SETUP] ✓ LEDs initialized (2x 45 pixels)");
 
     // Init Serial2 for HC-05 Classic Bluetooth Module
     Serial2.begin(HC05_BAUD, SERIAL_8N1, HC05_RX_PIN, HC05_TX_PIN);
     bluetoothConnected = true;
-    Serial.println("[SETUP] HC-05 Classic Bluetooth initialized");
+    Serial.println("[SETUP] ✓ HC-05 Classic Bluetooth initialized");
 
     // Init WiFi
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(AP_SSID, AP_PASS, 1, false, 4);
-    Serial.println("[SETUP] WiFi AP mode enabled");
+    Serial.println("[SETUP] ✓ WiFi AP mode enabled");
 
     // Init Web Server
     server.on("/toggle", HTTP_GET, []() {
@@ -436,12 +448,14 @@ void setup() {
     });
     ElegantOTA.begin(&server);
     server.begin();
-    Serial.println("[SETUP] Web server started");
+    Serial.println("[SETUP] ✓ Web server started");
 
     // Init BLE
     initBLE();
     
-    Serial.println("\n=== SETUP COMPLETE - READY FOR POV ===\n");
+    Serial.println("\n╔═════════════════════════════════════════╗");
+    Serial.println("║   SETUP COMPLETE - READY FOR POV       ║");
+    Serial.println("╚═════════════════════════════════════════╝\n");
 }
 
 // =====================================================
