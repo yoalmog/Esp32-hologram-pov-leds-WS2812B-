@@ -854,16 +854,17 @@ export default function App() {
     streamData, 
     isConnected: bleIsConnected, 
     isScanning: bleIsScanning,
+    isConnecting: bleIsConnecting,
     error: bleError, 
     sendCommand,
     scanAndConnect 
   } = useHardwareStream(activeBleId);
   const [isRetrying, setIsRetrying] = useState(false);
-  const [isBluetoothConnecting, setIsBluetoothConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
   // Sync BLE connection status with UI
   const isBluetoothConnected = bleIsConnected;
+  const isBluetoothConnecting = bleIsScanning || bleIsConnecting;
 
   // Update telemetry data dynamically
   useEffect(() => {

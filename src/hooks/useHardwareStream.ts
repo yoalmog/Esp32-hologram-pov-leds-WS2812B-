@@ -10,6 +10,7 @@ export function useHardwareStream(initialDeviceId: string | null) {
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(initialDeviceId);
   
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -70,6 +71,7 @@ export function useHardwareStream(initialDeviceId: string | null) {
     
     const connect = async () => {
       try {
+        setIsConnecting(true);
         // Drop existing connection if any
         try { await BleClient.disconnect(deviceId); } catch(e) {}
 
@@ -114,6 +116,8 @@ export function useHardwareStream(initialDeviceId: string | null) {
       } catch (err: any) {
         setError("Connection failed: " + (err.message || err));
         setIsConnected(false);
+      } finally {
+        setIsConnecting(false);
       }
     };
 
@@ -126,9 +130,10 @@ export function useHardwareStream(initialDeviceId: string | null) {
       }
       BleClient.disconnect(deviceId).catch(() => {});
       setIsConnected(false);
+      setIsConnecting(false);
     };
   }, [deviceId]);
 
-  return { streamData: data, isConnected, isScanning, error, sendCommand, scanAndConnect, setDeviceId };
+  return { streamData: data, isConnected, isScanning, isConnecting, error, sendCommand, scanAndConnect, setDeviceId };
 }
 
