@@ -82,7 +82,7 @@ volatile unsigned long revolutionTime = 40000;
 // =====================================================
 
 class ServerCallbacks: public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer* pServer) {
+    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
       bleConnected = true;
       Serial.println("[BLE] Client connected!");
     };
@@ -140,7 +140,6 @@ void initBLE() {
   
   // Create BLE Device
   NimBLEDevice::init("ESP32");
-  NimBLEDevice::setSecurityAuth(BLE_SM_PAIR_AUTH_REQ_BOND | BLE_SM_PAIR_AUTH_REQ_MITM);
   
   // Create BLE Server
   NimBLEServer *pServer = NimBLEDevice::createServer();
@@ -169,9 +168,6 @@ void initBLE() {
   // Start advertising
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06);
-  pAdvertising->setMaxPreferred(0x12);
   pAdvertising->start();
 
   Serial.println("[BLE] BLE Service started - Advertising as 'ESP32'");
@@ -222,7 +218,7 @@ bool setEffectByName(String name) {
 }
 
 // =====================================================
-// MATHS & RENDERING ENGINE
+// RENDERING ENGINE
 // =====================================================
 
 RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
