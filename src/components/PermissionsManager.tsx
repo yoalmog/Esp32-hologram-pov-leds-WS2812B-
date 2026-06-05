@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { BleClient } from '@capacitor-community/bluetooth-le';
 import { Geolocation } from '@capacitor/geolocation';
 import { Network } from '@capacitor/network';
-import { ShieldCheck, ShieldAlert, Wifi, Bluetooth, MapPin } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Wifi, Bluetooth, MapPin, Camera, Mic } from 'lucide-react';
 
 interface Props {
   onComplete: () => void;
@@ -13,7 +13,9 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
   const [status, setStatus] = useState<Record<string, 'pending' | 'granted' | 'denied' | 'error'>>({
     bluetooth: 'pending',
     location: 'pending',
-    network: 'pending'
+    network: 'pending',
+    camera: 'pending',
+    microphone: 'pending'
   });
   const [isInitializing, setIsInitializing] = useState(true);
 
@@ -60,6 +62,24 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
       setStatus(s => ({ ...s, network: 'granted' }));
     }
 
+    // 5. Camera
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach(t => t.stop());
+      setStatus(s => ({ ...s, camera: 'granted' }));
+    } catch (e) {
+      setStatus(s => ({ ...s, camera: 'denied' }));
+    }
+
+    // 6. Microphone
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+      setStatus(s => ({ ...s, microphone: 'granted' }));
+    } catch (e) {
+      setStatus(s => ({ ...s, microphone: 'denied' }));
+    }
+
     setIsInitializing(false);
   };
 
@@ -103,6 +123,16 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
             icon={<MapPin className="w-4 h-4" />} 
             label="Hardware Location" 
             status={status.location} 
+          />
+          <PermissionRow 
+            icon={<Camera className="w-4 h-4" />} 
+            label="Gesture Camera" 
+            status={status.camera} 
+          />
+          <PermissionRow 
+            icon={<Mic className="w-4 h-4" />} 
+            label="Audio Module" 
+            status={status.microphone} 
           />
           <PermissionRow 
             icon={<Wifi className="w-4 h-4" />} 
