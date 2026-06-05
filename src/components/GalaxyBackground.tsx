@@ -17,6 +17,7 @@ interface Props {
 export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => {
   const isVideo = bgImageId.startsWith("video") || bgImageId === "big_bang" || bgImageId === "neon_tunnel";
   const [videoPlayFailed, setVideoPlayFailed] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const getImgSrc = () => {
@@ -37,6 +38,7 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
 
   useEffect(() => {
     setVideoPlayFailed(false);
+    setVideoReady(false);
     
     if (isVideo && videoRef.current) {
       const video = videoRef.current;
@@ -73,8 +75,8 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
       `}</style>
       
       {/* Background layer with forced hardware acceleration */}
-      <div className="absolute inset-0 w-full h-full">
-        {isVideo ? (
+      <div className="absolute inset-0 w-full h-full bg-black">
+        {isVideo && !videoPlayFailed ? (
           <video
             key={getVideoSrc()}
             ref={videoRef}
@@ -83,19 +85,26 @@ export const GalaxyBackground: React.FC<Props> = ({ bgImageId = "galaxy1" }) => 
             loop
             muted
             playsInline
+            controls={false}
             preload="auto"
-            className="absolute inset-0 w-full h-full object-cover"
-            onCanPlay={() => setVideoPlayFailed(false)}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${videoReady ? 'opacity-100' : 'opacity-0'}`}
+            onCanPlay={() => {
+              setVideoPlayFailed(false);
+              setVideoReady(true);
+            }}
             onError={(e) => {
               console.error("Video error:", e);
               setVideoPlayFailed(true);
             }}
           />
-        ) : (
+        ) : null}
+        
+        {/* Render image if not a video, if video failed, or while video is loading */}
+        {(!isVideo || videoPlayFailed || !videoReady) && (
           <img
             src={getImgSrc()}
             alt="Galaxy Background"
-            className="absolute w-full h-full object-cover opacity-100 transition-opacity duration-1000"
+            className={`absolute w-full h-full object-cover transition-opacity duration-1000 ${videoReady && isVideo && !videoPlayFailed ? 'opacity-0' : 'opacity-100'}`}
             referrerPolicy="no-referrer"
             style={{ 
               transform: "translate3d(0, 0, 0)",

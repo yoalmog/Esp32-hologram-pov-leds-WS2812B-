@@ -31,25 +31,49 @@ export function useHardwareStream(initialDeviceId: string | null) {
     try {
       setIsScanning(true);
       setError(null);
-      await BleClient.initialize();
+      await BleClient.initialize({ androidNeverForLocation: true });
       
       // Auto-scan for ESP32 devices
       let foundId: string | null = null;
+      
+      // Attempt 1: Request LE Scan with Service Filter (Background/Low power friendly)
       await BleClient.requestLEScan(
-        { services: [ESP32_SERVICE], name: "ESP32", scanMode: ScanMode.SCAN_MODE_LOW_LATENCY },
+        { 
+          services: [ESP32_SERVICE], 
+          scanMode: ScanMode.SCAN_MODE_LOW_LATENCY 
+        },
         (result) => {
-          if (result.device.name === "ESP32" || result.localName === "ESP32") {
+          console.log("Device found in scan:", result.device.name, result.device.deviceId);
+          // If we find something that matches our service, or has a matching name, we grab it
+          if (result.device.name?.includes("ESP32") || result.device.name?.includes("Holo") || result.localName?.includes("ESP32")) {
             foundId = result.device.deviceId;
-            BleClient.stopLEScan();
+            BleClient.stopLEScan().catch(() => {});
           }
         }
       );
 
-      // Wait for scan or timeout
-      let retries = 0;
-      while (!foundId && retries < 50) { // ~5 seconds
+      // Wait for scan results
+      let scanWaitTime = 0;
+      while (!foundId && scanWaitTime < 40) { // 4 seconds
         await new Promise(r => setTimeout(r, 100));
-        retries++;
+        scanWaitTime++;
+      }
+      
+      await BleClient.stopLEScan().catch(() => {});
+
+      // Attempt 2: If nothing found, try a more direct request (shows system dialog)
+      if (!foundId) {
+        try {
+          const device = await BleClient.requestDevice({
+            services: [ESP32_SERVICE],
+            optionalServices: []
+          });
+          if (device) {
+            foundId = device.deviceId;
+          }
+        } catch (e) {
+          console.warn("requestDevice cancelled or failed:", e);
+        }
       }
 
       if (foundId) {

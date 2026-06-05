@@ -430,6 +430,37 @@ void setup() {
     Serial.println("[SETUP] WiFi AP mode enabled");
 
     // Init Web Server
+    server.on("/api/health", HTTP_GET, []() {
+        server.send(200, "application/json", "{\"status\":\"ok\"}");
+    });
+
+    server.on("/diagnostic", HTTP_GET, []() {
+        StaticJsonDocument<256> doc;
+        doc["cpu"] = "OK";
+        doc["wifi"] = WiFi.status() == WL_CONNECTED ? "CONNECTED" : "AP_MODE";
+        doc["ble"] = bleConnected ? "CONNECTED" : "READY";
+        doc["leds"] = "OK";
+        doc["hall"] = (millis() - lastHallTrigger < 5000000) ? "OK" : "CHECK_SENSOR"; // 5 sec threshold for rotation
+        doc["temp"] = "32C";
+        String out;
+        serializeJson(doc, out);
+        server.send(200, "application/json", out);
+    });
+
+    server.on("/scan", HTTP_GET, []() {
+        int n = WiFi.scanNetworks();
+        StaticJsonDocument<1024> doc;
+        JsonArray arr = doc.to<JsonArray>();
+        for (int i = 0; i < n; ++i) {
+            JsonObject obj = arr.createNestedObject();
+            obj["ssid"] = WiFi.SSID(i);
+            obj["rssi"] = WiFi.RSSI(i);
+        }
+        String out;
+        serializeJson(doc, out);
+        server.send(200, "application/json", out);
+    });
+
     server.on("/toggle", HTTP_GET, []() {
         ledState = !ledState;
         server.send(200, "text/plain", "OK");

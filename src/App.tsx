@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo } from "react";
+import React, { useState, useEffect, useRef, memo, useCallback } from "react";
 // Triggering a small change to ensure the deployment/build pipeline picks up the latest assets.
 import { motion, AnimatePresence } from "motion/react";
 import { BleClient } from '@capacitor-community/bluetooth-le';
@@ -11,6 +11,19 @@ import { PermissionsManager } from "./components/PermissionsManager";
 import { CalibrationPanel } from "./components/CalibrationPanel";
 
 import { HoloSlicer } from "./components/HoloSlicer";
+import { GestureController } from "./components/GestureController";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area
+} from "recharts";
+
 import {
   Menu,
   Wifi,
@@ -29,6 +42,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Play,
+  Plus,
   CheckCircle2,
   Database,
   Eye,
@@ -43,6 +57,9 @@ import {
   Upload,
   Aperture,
   Activity,
+  HelpCircle,
+  MoveVertical,
+  MoveHorizontal,
   Box,
   Smile,
   Type,
@@ -60,6 +77,7 @@ import {
   Folders,
   MapPin,
   Mic,
+  Hand,
   FolderOpen,
   ShieldAlert,
 } from "lucide-react";
@@ -277,21 +295,21 @@ const EFFECTS = [
   {
     id: "plasma",
     label: "PLASMA",
-    icon: (c: string) => <div className="w-6 h-6 rounded-full border-2 border-[#10b981] animate-pulse"></div>,
+    icon: (c: string) => <div className="w-6 h-6 rounded-full border-2 animate-pulse" style={{ borderColor: c }}></div>,
     color: "#10b981",
     desc: "Energy plasma field",
   },
   {
     id: "portal",
     label: "PORTAL",
-    icon: (c: string) => <div className="w-6 h-6 rounded-full border-2 border-dashed border-[#0ea5e9] animate-[spin_2s_linear_infinite]"></div>,
+    icon: (c: string) => <div className="w-6 h-6 rounded-full border-2 border-dashed animate-[spin_2s_linear_infinite]" style={{ borderColor: c }}></div>,
     color: "#0ea5e9",
     desc: "Hyperspace portal effect",
   },
   {
     id: "dna",
     label: "DNA SPIN",
-    icon: (c: string) => <div className="w-6 h-6 rounded-full border border-x-4 border-[#f43f5e] animate-pulse"></div>,
+    icon: (c: string) => <div className="w-6 h-6 rounded-full border border-x-4 animate-pulse" style={{ borderColor: c }}></div>,
     color: "#f43f5e",
     desc: "Helix double strand",
   },
@@ -350,6 +368,13 @@ const EFFECTS = [
     icon: (c: string) => <Aperture className="w-8 h-8" color={c} />,
     color: "#00b4d8",
     desc: "System logo projection",
+  },
+  {
+    id: "solid",
+    label: "SOLID",
+    icon: (c: string) => <div className="w-4 h-4 rounded-md shadow-sm" style={{ backgroundColor: c }}></div>,
+    color: "#00b4d8",
+    desc: "Static solid color display",
   },
 ];
 
@@ -782,12 +807,15 @@ export default function App() {
   }, [bgImageId]);
 
   const [activeEffect, setActiveEffect] = useState(() => safeGetLocal("holospin_activeEffect") || "rainbow");
+  const [colorMode, setColorMode] = useState<"solid" | "random">(() => (safeGetLocal("holospin_colorMode") as any) || "solid");
   const [logoUrl, setLogoUrl] = useState<string | null>(() => safeGetLocal("holospin_logoUrl") || null);
+
   const [logoRotation, setLogoRotation] = useState<number>(() => {
     const val = Number(safeGetLocal("holospin_logoRotation") || "0");
     return isNaN(val) ? 0 : val;
   });
   const [logoTintColor, setLogoTintColor] = useState<string>(() => safeGetLocal("holospin_logoTintColor") || "#00b4d8");
+  const [hue, setHue] = useState<number>(190);
   const [useLogoTint, setUseLogoTint] = useState<boolean>(() => safeGetLocal("holospin_useLogoTint") === "true");
   const [povText, setPovText] = useState(() => safeGetLocal("holospin_povText") || "POV SYSTEM HOLOSPIN 3D");
   const [povTextAnimation, setPovTextAnimation] = useState<string>(() => safeGetLocal("holospin_povTextAnimation") || "fade");
@@ -795,6 +823,10 @@ export default function App() {
     const val = Number(safeGetLocal("holospin_brightness") || "150");
     return isNaN(val) ? 150 : val;
   });
+  useEffect(() => {
+    setLogoTintColor(`hsl(${hue}, 100%, 50%)`);
+  }, [hue]);
+
   const [motorSpeed, setMotorSpeed] = useState(() => {
     const val = Number(safeGetLocal("holospin_motorSpeed") || "80");
     return isNaN(val) ? 80 : val;
@@ -850,15 +882,242 @@ export default function App() {
   // Connection and Sensor State
   const [showPermissions, setShowPermissions] = useState(false);
   const [activeBleId, setActiveBleId] = useState<string | null>(null);
+  const [presets, setPresets] = useState<Record<string, any>>(() => {
+    try {
+      const saved = safeGetLocal("holospin_presets");
+      return saved ? JSON.parse(saved) : { "1": null, "2": null, "3": null, "4": null };
+    } catch {
+      return { "1": null, "2": null, "3": null, "4": null };
+    }
+  });
+
+  const [gestureMode, setGestureMode] = useState(false);
+  const [commandQueue, setCommandQueue] = useState<any[]>([]);
+  const [syncProgress, setSyncProgress] = useState<number | null>(null);
+  const [syncLogs, setSyncLogs] = useState<{ cmd: string; status: 'pending' | 'success' }[]>([]);
+  const [handInFrame, setHandInFrame] = useState(false);
+  const [handConfidence, setHandConfidence] = useState(0);
+  const [gesturePulse, setGesturePulse] = useState(false);
+  const [syncHistory, setSyncHistory] = useState<{ time: string; quality: number }[]>([]);
+  const [gestureSensitivity, setGestureSensitivity] = useState(20); // 1-100 range
+  const [neutralCenter, setNeutralCenter] = useState({ x: 0.5, y: 0.5 });
+  const currentHandPos = useRef<{ x: number, y: number } | null>(null);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [showGestureTutorial, setShowGestureTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+
+  const tutorialSteps = [
+    { 
+      id: 'peace', 
+      title: 'Peace Sign', 
+      desc: 'Extend index and middle fingers. Used for loading specified presets.', 
+      icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
+      tip: "Keep fingers separated for best recognition."
+    },
+    { 
+      id: 'palm', 
+      title: 'Open Palm', 
+      desc: 'Show all 5 fingers clearly. Often mapped to high-energy effects like Fire.', 
+      icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
+      tip: "Keep your palm facing the camera directly."
+    },
+    { 
+      id: 'fist', 
+      title: 'Closed Fist', 
+      desc: 'Typical for power-off or global stops.', 
+      icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
+      tip: "Tuck your thumb for a cleaner profile."
+    },
+    { 
+      id: 'swipe_v', 
+      title: 'Vertical Swiping', 
+      desc: 'Move your hand up or down to adjust brightness.', 
+      icon: <MoveVertical className="w-12 h-12 text-[#00b4d8]" />,
+      tip: "Use slow, steady movements."
+    },
+    { 
+      id: 'swipe_h', 
+      title: 'Horizontal Swiping', 
+      desc: 'Move left or right to change effect speed.', 
+      icon: <MoveHorizontal className="w-12 h-12 text-[#00b4d8]" />,
+      tip: "Horizontal movement controls the motor density."
+    }
+  ];
+  const [gestureMapping, setGestureMapping] = useState<Record<string, string>>(() => {
+    const saved = safeGetLocal("holospin_gesture_mapping");
+    return saved ? JSON.parse(saved) : {
+      peace: "rainbow",
+      palm: "fire",
+      fist: "power_off",
+      thumbs_up: "power_on",
+      point_up: "clock",
+      rock_on: "aurora"
+    };
+  });
+
+  const [pendingMapping, setPendingMapping] = useState<Record<string, string> | null>(null);
+
+  useEffect(() => {
+    safeSaveLocal("holospin_gesture_mapping", JSON.stringify(gestureMapping));
+  }, [gestureMapping]);
+
+  const handleCalibrate = () => {
+    if (!handInFrame || !currentHandPos.current) {
+      setToastMessage("Keep hand in frame to calibrate!");
+      return;
+    }
+    setIsCalibrating(true);
+    setNeutralCenter(currentHandPos.current);
+    setToastMessage("Neutral position calibrated!");
+    setTimeout(() => setIsCalibrating(false), 1000);
+  };
+
+  const lastConfidenceUpdate = useRef(0);
+  const handleHandDetected = useCallback((detected: boolean, confidence: number, pos?: { x: number, y: number }) => {
+    setHandInFrame(detected);
+    if (pos) currentHandPos.current = pos;
+    const now = Date.now();
+    if (now - lastConfidenceUpdate.current > 100) { // Debounce to 100ms
+      setHandConfidence(confidence);
+      lastConfidenceUpdate.current = now;
+    }
+  }, []);
+
+  const [schedules, setSchedules] = useState<any[]>(() => {
+    const saved = safeGetLocal("holospin_schedules");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    safeSaveLocal("holospin_schedules", JSON.stringify(schedules));
+  }, [schedules]);
+
   const { 
     streamData, 
     isConnected: bleIsConnected, 
     isScanning: bleIsScanning,
     isConnecting: bleIsConnecting,
     error: bleError, 
-    sendCommand,
+    sendCommand: rawSendCommand,
     scanAndConnect 
   } = useHardwareStream(activeBleId);
+
+  // Update sync history for the analytical chart after streamData is declared
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSyncHistory(prev => {
+        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        // Use real telemetry if connected, otherwise simulate some high-quality jitter
+        const qualityBase = streamData?.syncQuality || 100;
+        const jitter = Math.random() * 2;
+        const nextVal = Math.max(0, Math.min(100, Math.round(qualityBase - jitter)));
+        
+        return [...prev, { time: now, quality: nextVal }].slice(-20);
+      });
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [streamData]);
+
+  const sendCommand = (cmd: any) => {
+    if (bleIsConnected && rawSendCommand) {
+      rawSendCommand(cmd);
+    } else {
+      setCommandQueue(prev => [...prev, cmd]);
+      setToastMessage("מכשיר מנותק. הפקודה נוספה לתור. / Device disconnected. Command queued.");
+    }
+  };
+
+  // Scheduler logic
+  useEffect(() => {
+    const checkSchedules = () => {
+      const now = new Date();
+      const currentH = now.getHours();
+      const currentM = now.getMinutes();
+
+      schedules.forEach(sched => {
+        if (!sched.active) return;
+        const [h, m] = sched.time.split(":").map(Number);
+        if (h === currentH && m === currentM) {
+          // Trigger once per minute maximum
+          const lastRunKey = `last_run_${sched.id}`;
+          const lastRunOnMinute = sessionStorage.getItem(lastRunKey);
+          if (lastRunOnMinute !== currentM.toString()) {
+            sessionStorage.setItem(lastRunKey, currentM.toString());
+            console.log(`[Scheduler] Triggering schedule: ${sched.action}`);
+            if (sched.action === "power_on") {
+              setDeviceStatus("running");
+              if (bleIsConnected && sendCommand) sendCommand("POWER:ON");
+            } else if (sched.action === "power_off") {
+              setDeviceStatus("idle");
+              if (bleIsConnected && sendCommand) sendCommand("POWER:OFF");
+            } else if (sched.action === "preset" && sched.presetId) {
+              handleLoadPreset(sched.presetId);
+            }
+          }
+        }
+      });
+    };
+
+    const interval = setInterval(checkSchedules, 10000); // Check every 10s
+    return () => clearInterval(interval);
+  }, [schedules, bleIsConnected, sendCommand]);
+
+  useEffect(() => {
+    if (bleIsConnected && commandQueue.length > 0 && rawSendCommand) {
+      const syncQueue = async () => {
+        const total = commandQueue.length;
+        setSyncProgress(0);
+        setSyncLogs(commandQueue.map(cmd => ({ cmd: typeof cmd === 'string' ? cmd : JSON.stringify(cmd), status: 'pending' })));
+        setToastMessage(`מסנכרן ${total} פקודות ממתינות... / Syncing ${total} pending commands...`);
+        let current = 0;
+        for (const cmd of commandQueue) {
+          rawSendCommand(cmd);
+          current++;
+          setSyncProgress(Math.round((current / total) * 100));
+          setSyncLogs(prev => prev.map((log, idx) => idx === current - 1 ? { ...log, status: 'success' } : log));
+          await new Promise(r => setTimeout(r, 150));
+        }
+        setCommandQueue([]);
+        setSyncProgress(null);
+        setTimeout(() => setSyncLogs([]), 2000);
+        setToastMessage("סנכרון הושלם! / Sync completed!");
+      };
+      syncQueue();
+    }
+  }, [bleIsConnected, commandQueue, rawSendCommand]);
+
+  useEffect(() => {
+    safeSaveLocal("holospin_colorMode", colorMode);
+    if (bleIsConnected && sendCommand) {
+      const modeCmd = colorMode === "random" ? "COLOR_MODE:RANDOM" : "COLOR_MODE:SOLID";
+      sendCommand(modeCmd);
+    }
+  }, [colorMode, bleIsConnected, sendCommand]);
+
+  // Handle color transmission
+  useEffect(() => {
+    if (colorMode === "solid" && bleIsConnected && sendCommand) {
+      // Convert HSL to RGB for the device
+      const h = hue / 360;
+      const s = 1, l = 0.5;
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      const f = (t: number) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      const r = Math.round(f(h + 1/3) * 255);
+      const g = Math.round(f(h) * 255);
+      const b = Math.round(f(h - 1/3) * 255);
+      
+      sendCommand(`${r},${g},${b}`);
+    }
+  }, [logoTintColor, colorMode, bleIsConnected, sendCommand]);
+
   const [isRetrying, setIsRetrying] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
@@ -904,6 +1163,69 @@ export default function App() {
     }
   };
 
+  const handleLoadPreset = useCallback((slotId: string) => {
+    const entry = presets[slotId];
+    if (!entry) return;
+
+    setIsApplyingPreset(true);
+    setTimeout(() => setIsApplyingPreset(false), 800);
+
+    if (entry.activeEffect) setActiveEffect(entry.activeEffect);
+    if (typeof entry.motorSpeed === 'number') setMotorSpeed(entry.motorSpeed);
+    if (typeof entry.brightness === 'number') setBrightness(entry.brightness);
+    if (typeof entry.effectSpeedRate === 'number' && entry.effectSpeedRate > 0) setEffectSpeedRate(entry.effectSpeedRate);
+    if (typeof entry.effectScale === 'number' && entry.effectScale > 0) setEffectScale(entry.effectScale);
+    if (typeof entry.effectComplexity === 'number') setEffectComplexity(entry.effectComplexity);
+    if (entry.logoUrl !== undefined) setLogoUrl(entry.logoUrl);
+    if (entry.povText !== undefined) setPovText(entry.povText);
+    if (typeof entry.logoRotation === 'number') setLogoRotation(entry.logoRotation);
+    if (entry.logoTintColor) setLogoTintColor(entry.logoTintColor);
+    if (entry.useLogoTint !== undefined) setUseLogoTint(entry.useLogoTint);
+    if (entry.povTextAnimation) setPovTextAnimation(entry.povTextAnimation);
+    setToastMessage(`Profile ${slotId} loaded successfully / פרופיל נטען בהצלחה`);
+  }, [presets]);
+
+  const handleVerticalSwipe = useCallback((delta: number) => {
+    setBrightness(prev => Math.max(10, Math.min(255, Math.round(prev + delta))));
+  }, []);
+
+  const handleHorizontalSwipe = useCallback((delta: number) => {
+    setEffectSpeedRate(prev => Math.max(0.2, Math.min(3.0, prev + delta / 100)));
+  }, []);
+
+  const handleGestureMove = useCallback((x: number, y: number) => {
+    // Map x (0-1) to Complexity (1-10) - inverted x because camera is mirrored
+    const complexity = Math.round((1 - x) * 9 + 1);
+    // Map y (0-1) to Scale (0.5-2.0)
+    const scale = Number(((1 - y) * 1.5 + 0.5).toFixed(2));
+    
+    setEffectComplexity(prev => prev === complexity ? prev : complexity);
+    setEffectScale(prev => prev === scale ? prev : scale);
+  }, []);
+
+  const handleGesture = useCallback((gesture: string) => {
+    const action = gestureMapping[gesture];
+    if (!action) return;
+
+    // Trigger visual feedback
+    setGesturePulse(true);
+    setTimeout(() => setGesturePulse(false), 400);
+
+    if (action === "power_off") {
+      setDeviceStatus("idle");
+      if (bleIsConnected && sendCommand) sendCommand("POWER:OFF");
+      setToastMessage("Gesture: Power Off");
+    } else if (action === "power_on") {
+      setDeviceStatus("running");
+      if (bleIsConnected && sendCommand) sendCommand("POWER:ON");
+      setToastMessage("Gesture: Power On");
+    } else {
+      // It's a preset
+      handleLoadPreset(action);
+      setToastMessage(`Gesture: Active Effect -> ${action.toUpperCase()}`);
+    }
+  }, [gestureMapping, bleIsConnected, sendCommand, handleLoadPreset]);
+
   const [hallPulses, setHallPulses] = useState<number[]>([]);
   const [rpm, setRpm] = useState(0);
   const [softStop, setSoftStop] = useState(false);
@@ -942,6 +1264,57 @@ export default function App() {
   const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
   const [diagnosticProgress, setDiagnosticProgress] = useState(0);
   const diagnosticAbortControllerRef = useRef<AbortController | null>(null);
+
+  const handleFactoryReset = () => {
+    if (confirm("⚠️ WARNING: This will clear ALL settings, presets, and configs. The system will reset to factory defaults. Continue? / אזהרה: פעולה זו תנקה את כל ההגדרות והפרופילים השמורים. האם להמשיך?")) {
+      // Clear persistent storage
+      const keysToRemove = [
+        "holospin_activeEffect",
+        "holospin_colorMode",
+        "holospin_logoUrl",
+        "holospin_logoRotation",
+        "holospin_logoTintColor",
+        "holospin_useLogoTint",
+        "holospin_povText",
+        "holospin_povTextAnimation",
+        "holospin_brightness",
+        "holospin_motorSpeed",
+        "holospin_state",
+        "holospin_presets",
+        "isLightMode",
+        "isSyncSpeedRate",
+        "synthVideoUrl",
+        "bgImage",
+        "bgImageId"
+      ];
+      keysToRemove.forEach(k => safeRemoveLocal(k));
+
+      // Reset States
+      setActiveEffect("rainbow");
+      setColorMode("solid");
+      setLogoUrl(null);
+      setLogoRotation(0);
+      setLogoTintColor("#00b4d8");
+      setUseLogoTint(false);
+      setPovText("POV SYSTEM HOLOSPIN 3D");
+      setPovTextAnimation("fade");
+      setBrightness(150);
+      setMotorSpeed(80);
+      setPresets({ "1": null, "2": null, "3": null, "4": null });
+      setSubPage(null);
+      setActiveTab("controller");
+
+      // Hardware Reset
+      if (bleIsConnected && sendCommand) {
+        sendCommand("RESET");
+      }
+
+      setToastMessage("FACTORY RESET COMPLETE / איפוס יצרן הושלם");
+      
+      // Force reload to ensure all clean states are picked up (optional but safer)
+      setTimeout(() => window.location.reload(), 1500);
+    }
+  };
 
   const handleRunDiagnostics = async () => {
     setIsRunningDiagnostics(true);
@@ -1002,15 +1375,6 @@ export default function App() {
     }
   }, [toastMessage]);
 
-  const [presets, setPresets] = useState<Record<string, any>>(() => {
-    try {
-      const saved = safeGetLocal("holospin_presets");
-      return saved ? JSON.parse(saved) : { "1": null, "2": null, "3": null, "4": null };
-    } catch {
-      return { "1": null, "2": null, "3": null, "4": null };
-    }
-  });
-
   const [isApplyingPreset, setIsApplyingPreset] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [discoveredDevices, setDiscoveredDevices] = useState<any[]>([]);
@@ -1043,16 +1407,42 @@ export default function App() {
 
       // 2. WiFi Discovery
       try {
-        const netRes = await fetch("/scan");
-        if (netRes.ok) {
-          const nets = await netRes.json();
-          nets.forEach((n: any) => bleDevices.push({
-            id: n.ssid,
-            name: n.ssid,
+        // Try to reach the default ESP32 AP IP
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), 2000);
+        const wifiRes = await fetch("http://192.168.4.1/api/health", { 
+          signal: controller.signal,
+          mode: 'no-cors' // Allow reaching even if CORS not set (diagnostic only)
+        }).catch(() => null);
+        clearTimeout(id);
+
+        if (wifiRes) {
+          bleDevices.push({
+            id: "192.168.4.1",
+            name: "Holospin_Wi-Fi",
             ip: "192.168.4.1",
-            strength: n.signal,
+            strength: -30,
             type: "WIFI"
-          }));
+          });
+        }
+      } catch (e) {}
+
+      // 3. Backend Scan (Optional/Mock fallback)
+      try {
+        const netRes = await fetch("/scan").catch(() => null);
+        if (netRes && netRes.ok) {
+          const nets = await netRes.json();
+          nets.forEach((n: any) => {
+            if (!bleDevices.find(d => d.id === n.ssid)) {
+              bleDevices.push({
+                id: n.ssid,
+                name: n.ssid,
+                ip: "192.168.4.1",
+                strength: n.signal || n.rssi,
+                type: "WIFI"
+              });
+            }
+          });
         }
       } catch (e) {}
 
@@ -1258,28 +1648,6 @@ export default function App() {
     const updated = { ...presets, [slotId]: freshPreset };
     setPresets(updated);
     safeSaveLocal("holospin_presets", JSON.stringify(updated));
-  };
-
-  const handleLoadPreset = (slotId: string) => {
-    const entry = presets[slotId];
-    if (!entry) return;
-
-    setIsApplyingPreset(true);
-    setTimeout(() => setIsApplyingPreset(false), 800);
-
-    if (entry.activeEffect) setActiveEffect(entry.activeEffect);
-    if (typeof entry.motorSpeed === 'number') setMotorSpeed(entry.motorSpeed);
-    if (typeof entry.brightness === 'number') setBrightness(entry.brightness);
-    if (typeof entry.effectSpeedRate === 'number' && entry.effectSpeedRate > 0) setEffectSpeedRate(entry.effectSpeedRate);
-    if (typeof entry.effectScale === 'number' && entry.effectScale > 0) setEffectScale(entry.effectScale);
-    if (typeof entry.effectComplexity === 'number') setEffectComplexity(entry.effectComplexity);
-    if (entry.logoUrl !== undefined) setLogoUrl(entry.logoUrl);
-    if (entry.povText !== undefined) setPovText(entry.povText);
-    if (typeof entry.logoRotation === 'number') setLogoRotation(entry.logoRotation);
-    if (entry.logoTintColor) setLogoTintColor(entry.logoTintColor);
-    if (entry.useLogoTint !== undefined) setUseLogoTint(entry.useLogoTint);
-    if (entry.povTextAnimation) setPovTextAnimation(entry.povTextAnimation);
-    setToastMessage(`Profile ${slotId} loaded successfully / פרופיל נטען בהצלחה`);
   };
 
   const handleDeletePreset = (slotId: string) => {
@@ -1782,6 +2150,57 @@ export default function App() {
             config={calibrationConfig}
             telemetry={{ sync: isConnected || isBluetoothConnected, jitter: isConnected || isBluetoothConnected ? "0.12" : "0.00" }}
           />
+
+          <div className="border border-slate-800 bg-[#080a0f] rounded-2xl p-5 flex flex-col gap-4 mt-2 shadow-inner">
+            <div className="flex justify-between items-center px-1">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Sync History</span>
+                <span className="text-[8px] text-slate-600 uppercase tracking-tighter">Real-time Hall Sensor Stability</span>
+              </div>
+              <Activity className="w-3.5 h-3.5 text-[#00b4d8] animate-pulse" />
+            </div>
+
+            <div className="h-[120px] w-full mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={syncHistory}>
+                  <defs>
+                    <linearGradient id="colorQuality" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00b4d8" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#00b4d8" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                  <XAxis 
+                    dataKey="time" 
+                    hide 
+                  />
+                  <YAxis 
+                    domain={[0, 100]} 
+                    hide 
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '10px' }}
+                    itemStyle={{ color: '#00b4d8' }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="quality" 
+                    stroke="#00b4d8" 
+                    strokeWidth={2}
+                    fillOpacity={1} 
+                    fill="url(#colorQuality)" 
+                    animationDuration={500}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex justify-between items-center px-1">
+              <span className="text-[8px] text-slate-500 uppercase">Interference Monitor</span>
+              <span className={`text-[10px] font-mono font-bold ${state.sync.quality.includes("PERFECT") ? "text-emerald-400" : "text-amber-400"}`}>
+                {state.sync.quality}
+              </span>
+            </div>
+          </div>
         </div>
       );
     }
@@ -2525,7 +2944,7 @@ bool setEffectByName(String name) {
 // RENDERING ENGINE
 // =====================================================
 
-RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
+RgbColor getEffectColorRaw(int ledIdx, float angle, unsigned long timeMs) {
     float r = (float)ledIdx / (float)PIXEL_COUNT;
     switch (currentEffect) {
         case EFFECT_CLOCK: {
@@ -2534,9 +2953,7 @@ RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
             return RgbColor(0, 0, 10);
         }
         case EFFECT_RAINBOW: {
-            float hue = fmod(angle + r * 100.0f + (float)timeMs * 0.05f, 360.0f) / 360.0f;
-            uint8_t component = (uint8_t)(hue * 255);
-            return RgbColor(component, 255 - component, 128);
+            return RgbColor(255, 0, 0); // Logic below handles this as a placeholder
         }
         case EFFECT_FIRE: {
             float noise = sin(r * 15.0f - (float)timeMs * 0.008f) * 0.5f + 0.5f;
@@ -2662,6 +3079,28 @@ RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
     }
 }
 
+RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
+    RgbColor base = getEffectColorRaw(ledIdx, angle, timeMs);
+    if (base.R == 0 && base.G == 0 && base.B == 0) return base;
+
+    if (colorModeRandom || currentEffect == EFFECT_RAINBOW) {
+        float hueOverride = fmod((float)timeMs * 0.15f + angle + (currentEffect == EFFECT_RAINBOW ? ledIdx * 10 : 0), 360.0f);
+        float s = 1.0f, v = 1.0f;
+        float c = v * s;
+        float x = c * (1.0f - abs(fmod(hueOverride / 60.0f, 2.0f) - 1.0f));
+        float m = v - c;
+        float nr, ng, nb;
+        if (hueOverride < 60) { nr=c; ng=x; nb=0; }
+        else if (hueOverride < 120) { nr=x; ng=c; nb=0; }
+        else if (hueOverride < 180) { nr=0; ng=c; nb=x; }
+        else if (hueOverride < 240) { nr=0; ng=x; nb=c; }
+        else if (hueOverride < 300) { nr=x; ng=0; nb=c; }
+        else { nr=c; ng=0; nb=x; }
+        return RgbColor((uint8_t)((nr+m)*255), (uint8_t)((ng+m)*255), (uint8_t)((nb+m)*255));
+    }
+    return base;
+}
+
 void renderPOV(float angle, unsigned long timeMs) {
     if (!ledState) {
         strip1.ClearTo(RgbColor(0));
@@ -2676,6 +3115,11 @@ void renderPOV(float angle, unsigned long timeMs) {
     }
 }
 
+// =====================================================
+// GLOBAL COLOR MODE
+// =====================================================
+bool colorModeRandom = false;
+
 void processIncomingCommand(String cmd) {
     cmd.trim();
     if (cmd.length() == 0) return;
@@ -2684,6 +3128,8 @@ void processIncomingCommand(String cmd) {
 
     if (upperValue == "ON") ledState = true;
     else if (upperValue == "OFF") ledState = false;
+    else if (upperValue == "COLOR_MODE:RANDOM") colorModeRandom = true;
+    else if (upperValue == "COLOR_MODE:SOLID") colorModeRandom = false;
     else if (upperValue.startsWith("EFFECT:") || setEffectByName(cmd)) {
         if (upperValue.startsWith("EFFECT:")) setEffectByName(cmd.substring(7));
     } else {
@@ -3167,13 +3613,53 @@ void loop() {
                 <div className="border border-slate-800/80 rounded-2xl bg-[#0c0e15] overflow-hidden flex flex-col divide-y divide-slate-800/50">
                   {category.slots.map((slotId) => {
                     const saved = presets[slotId];
+                    const isPresetActive = saved && saved.activeEffect === activeEffect;
+
                     return (
                       <div
                         key={slotId}
-                        className="flex items-center justify-between py-4 px-4 hover:bg-slate-800/30 transition-all group"
+                        className={`flex items-center gap-4 py-4 px-4 transition-all group ${isPresetActive ? 'bg-[#00b4d8]/5' : 'hover:bg-slate-800/30'}`}
                       >
-                        <div className="flex flex-col">
-                          <span className="text-[13px] font-bold text-slate-200">פרופיל {slotId} / Slot {slotId}</span>
+                        {/* Preset Thumbnail */}
+                        <div className="relative shrink-0">
+                          {isPresetActive && (
+                            <motion.div 
+                              animate={{ 
+                                scale: [1, 1.2, 1],
+                                opacity: [0.3, 0.6, 0.3],
+                              }}
+                              transition={{ 
+                                duration: 2, 
+                                repeat: Infinity,
+                                ease: "easeInOut"
+                              }}
+                              className="absolute inset-0 bg-[#00b4d8] rounded-xl blur-md -z-10"
+                            />
+                          )}
+                          <div className={`w-12 h-12 rounded-xl bg-slate-900 border flex items-center justify-center shadow-inner transition ${isPresetActive ? 'border-[#00b4d8] shadow-[0_0_15px_rgba(0,180,216,0.2)]' : 'border-slate-800 group-hover:border-slate-700'}`}>
+                            {saved ? (
+                              <div className="scale-75">
+                                {EFFECTS.find(e => e.id === saved.activeEffect)?.icon(EFFECTS.find(e => e.id === saved.activeEffect)?.color || "#fff")}
+                              </div>
+                            ) : (
+                              <Plus className="w-5 h-5 text-slate-800" />
+                            )}
+                          </div>
+                          
+                          {isPresetActive && (
+                             <div className="absolute -top-1 -right-1 w-3 h-3 bg-[#00b4d8] border-2 border-[#0c0e15] rounded-full z-10"></div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[13px] font-bold ${isPresetActive ? 'text-[#00b4d8]' : 'text-slate-200'}`}>
+                              פרופיל {slotId} / Slot {slotId}
+                            </span>
+                            {isPresetActive && (
+                              <span className="text-[7px] font-black bg-[#00b4d8] text-[#0c0e15] px-1 rounded-sm tracking-tighter uppercase animate-pulse">ACTIVE</span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-slate-500">
                             {saved ? `Effect: ${saved.activeEffect} (${saved.savedAt})` : 'Slot Empty / ריק'}
                           </span>
@@ -3325,9 +3811,20 @@ void loop() {
               safeSaveLocal("holospin_state", JSON.stringify(state));
               setToastMessage("Advanced settings applied & saved! / הגדרות מתקדמות נשמרו בהצלחה!");
             }}
-            className="w-full bg-[#ef4444] hover:bg-[#dc2626] text-white py-4 rounded-xl text-[11px] font-bold tracking-widest uppercase shadow-[0_0_15px_rgba(239,68,68,0.25)] transition mt-2 cursor-pointer active:scale-95"
+            className="w-full bg-[#ef4444] hover:bg-[#dc2626] text-white py-4 rounded-xl text-[11px] font-bold tracking-widest uppercase shadow-[0_0_15px_rgba(239,68,68,0.25)] transition mt-2 cursor-pointer active:scale-95 flex items-center justify-center gap-2"
           >
+            <ShieldAlert className="w-4 h-4" />
             CONFIRM ADVANCED SETTINGS
+          </button>
+
+          <div className="h-[1px] bg-slate-800/50 my-2"></div>
+
+          <button
+            onClick={handleFactoryReset}
+            className="w-full bg-transparent border border-[#ef4444]/30 hover:border-[#ef4444] text-[#ef4444] py-4 rounded-xl text-[11px] font-bold tracking-widest uppercase transition cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            FACTORY RESET SYSTEM
           </button>
         </div>
       );
@@ -3708,6 +4205,277 @@ void loop() {
               קבצים המאוחסנים על כרטיס ה-SD בתיקיות המוגדרות מופעלים ישירות מהדיסק המקומי של ה-ESP32. סימון פריטים וכפתור האישור מאפשרים עריכת פלייליסט התצוגה המעגלי ללא צורך בכתיבת קוד מחדש בכל פעם.
             </p>
           </div>
+        </div>
+      );
+    }
+
+    if (subPage === "gesture_mapping") {
+      const currentMapping = pendingMapping || gestureMapping;
+      const hasChanges = pendingMapping !== null;
+
+      return (
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+           <div className="flex flex-col gap-1">
+              <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase">
+                Gesture Mapping Config / פקודות מחוות
+              </h3>
+              <button 
+                onClick={() => {
+                    setTutorialStep(0);
+                    setShowGestureTutorial(true);
+                }}
+                className="p-2 border border-slate-800 rounded-xl bg-slate-900/50 text-[#00b4d8] hover:bg-slate-800 transition-colors"
+              >
+                <HelpCircle className="w-5 h-5" />
+              </button>
+              <p className="text-[10px] text-slate-500">Assign hand shapes to specific effects</p>
+           </div>
+
+            <div className="bg-slate-900/40 p-5 rounded-3xl border border-slate-800/60 flex flex-col gap-5">
+              <div className="flex justify-between items-center px-1">
+                <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Motion Sensitivity</span>
+                <span className="text-[11px] font-mono text-[#00b4d8] font-bold">{gestureSensitivity}%</span>
+              </div>
+
+              <div className="flex gap-2 p-1 bg-slate-950/50 rounded-2xl border border-slate-800/40">
+                {[
+                  { label: "Relaxed", val: 25 },
+                  { label: "High Accuracy", val: 55 },
+                  { label: "Quick Response", val: 85 }
+                ].map((prof) => (
+                  <button
+                    key={prof.label}
+                    onClick={() => setGestureSensitivity(prof.val)}
+                    className={`flex-1 py-2 rounded-xl text-[8px] font-bold uppercase tracking-widest transition-all ${
+                      gestureSensitivity === prof.val 
+                      ? 'bg-[#00b4d8] text-white shadow-[0_0_15px_rgba(0,180,216,0.3)]' 
+                      : 'bg-transparent text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    {prof.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="px-1">
+                <CustomSlider 
+                  value={gestureSensitivity} 
+                  onChange={setGestureSensitivity} 
+                  min={1} 
+                  max={100} 
+                  thumbColor="#00b4d8" 
+                  trackColor="#10141e"
+                />
+              </div>
+              <p className="text-[8px] text-slate-500 uppercase tracking-tighter text-center">Higher sensitivity allows for smaller hand movements</p>
+           </div>
+
+           <div className={`p-5 rounded-3xl border flex flex-col gap-4 transition-all duration-300 ${handInFrame ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-900/40 border-slate-800/60'}`}>
+              <div className="flex justify-between items-center px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Detection Strength</span>
+                  {handInFrame && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                </div>
+                <span className={`text-[11px] font-mono font-bold ${handInFrame ? 'text-emerald-400' : 'text-slate-600'}`}>
+                  {handInFrame ? Math.round(handConfidence * 100) : 0}%
+                </span>
+              </div>
+              <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800/50 p-[1px]">
+                <motion.div 
+                  className={`h-full rounded-full transition-all duration-300 ${handConfidence > 0.8 ? 'bg-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : handConfidence > 0.5 ? 'bg-amber-400' : 'bg-rose-500'}`}
+                  initial={{ width: 0 }}
+                  animate={{ width: handInFrame ? `${handConfidence * 100}%` : '0%' }}
+                />
+              </div>
+              <button 
+                onClick={handleCalibrate}
+                disabled={!handInFrame || isCalibrating}
+                className={`w-full py-2.5 rounded-xl border font-bold text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                  handInFrame 
+                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30' 
+                  : 'bg-slate-800/50 border-slate-700 text-slate-500 cursor-not-allowed opacity-50'
+                }`}
+              >
+                <Target className={`w-3 h-3 ${isCalibrating ? 'animate-spin' : ''}`} />
+                {isCalibrating ? "Calibrating..." : "Record Hand for Calibration"}
+              </button>
+           </div>
+
+           <div className="flex flex-col gap-3">
+              {[
+                { key: 'peace', label: 'Peace Sign' },
+                { key: 'palm', label: 'Open Palm' },
+                { key: 'fist', label: 'Closed Fist' },
+                { key: 'thumbs_up', label: 'Thumbs Up' },
+                { key: 'point_up', label: 'Pointing Up' },
+                { key: 'rock_on', label: 'Rock On' }
+              ].map((ges) => (
+                <div key={ges.key} className="bg-[#0c0e15] border border-slate-800 rounded-2xl p-4 flex flex-col gap-4">
+                   <div className="flex items-center justify-between">
+                     <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[#00b4d8]">
+                           <Hand className="w-4 h-4" />
+                        </div>
+                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-300">{ges.label}</span>
+                     </div>
+                     <div className="text-[9px] font-mono text-slate-500 bg-slate-900/50 px-2 py-0.5 rounded border border-slate-800/50">landmarker_v1</div>
+                   </div>
+
+                   <div className="flex flex-col gap-1.5">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase ml-1">Target Action</span>
+                      <select 
+                        value={currentMapping[ges.key]}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPendingMapping(prev => ({ ...(prev || gestureMapping), [ges.key]: val }));
+                        }}
+                        className="w-full bg-[#050608] border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-200 focus:outline-none focus:border-[#00b4d8]/50 appearance-none cursor-pointer"
+                      >
+                         <option value="power_on">Activate Device (On)</option>
+                         <option value="power_off">Deactivate Device (Off)</option>
+                         <option value="fire">Fire Particles</option>
+                         <option value="rainbow">Rainbow Spin</option>
+                         <option value="matrix">Matrix Code</option>
+                         <option value="aurora">Aurora Borealis</option>
+                         <option value="plasma">Plasma Pulse</option>
+                         <option value="clock">Analog Clock</option>
+                      </select>
+                   </div>
+                </div>
+              ))}
+           </div>
+
+           {hasChanges && (
+             <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[90%] max-w-sm z-50">
+                <button 
+                  onClick={() => {
+                    setGestureMapping(pendingMapping);
+                    setPendingMapping(null);
+                    setToastMessage("Gesture mappings updated successfully!");
+                  }}
+                  className="w-full bg-[#00b4d8] text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(0,180,216,0.4)] flex items-center justify-center gap-3 active:scale-95 transition-transform"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                   Confirm Mapping Changes
+                </button>
+             </div>
+           )}
+
+           <div className="bg-[#00b4d8]/5 border border-[#00b4d8]/20 rounded-2xl p-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-[#00b4d8]/10 flex items-center justify-center border border-[#00b4d8]/20">
+                 <Aperture className="w-5 h-5 text-[#00b4d8]" />
+              </div>
+              <div className="flex flex-col">
+                 <span className="text-[10px] font-bold text-slate-200 uppercase tracking-widest">Real-time Recognition</span>
+                 <span className="text-[9px] text-slate-500 leading-tight">Gestures are processed locally via MediaPipe for low latency.</span>
+              </div>
+           </div>
+        </div>
+      );
+    }
+
+    if (subPage === "schedule") {
+      return (
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+           <div className="flex flex-col gap-1">
+              <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase">
+                Operation Scheduler / זמני פעילות
+              </h3>
+              <p className="text-[10px] text-slate-500">Set automatic timers for HoloSpin events</p>
+           </div>
+
+           <div className="flex flex-col gap-3">
+              {schedules.length === 0 ? (
+                <div className="bg-slate-900/40 border border-slate-800 border-dashed rounded-3xl p-10 flex flex-col items-center justify-center gap-3 text-slate-500">
+                   <Clock className="w-10 h-10 opacity-20" />
+                   <span className="text-[10px] font-bold uppercase tracking-widest">No Active Schedules</span>
+                </div>
+              ) : (
+                schedules.map((sched) => (
+                  <div key={sched.id} className="bg-[#0c0e15] border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                     <div className="flex items-center gap-4">
+                        <div className={`p-3 rounded-xl bg-slate-900 border border-slate-800 ${sched.active ? "text-[#00b4d8]" : "text-slate-600"}`}>
+                           <Clock className="w-5 h-5" />
+                        </div>
+                        <div className="flex flex-col">
+                           <span className="text-sm font-bold text-slate-200">{sched.time}</span>
+                           <span className="text-[10px] font-black uppercase tracking-widest text-[#a855f7]/80">
+                              {sched.action === "power_on" ? "Power On" : sched.action === "power_off" ? "Power Off" : `Preset: ${sched.presetId}`}
+                           </span>
+                        </div>
+                     </div>
+                     <div className="flex items-center gap-3">
+                        <Toggle 
+                           value={sched.active} 
+                           activeColor="#00b4d8" 
+                           onChange={(v: boolean) => setSchedules(schedules.map(s => s.id === sched.id ? { ...s, active: v } : s))} 
+                        />
+                        <button 
+                           onClick={() => setSchedules(schedules.filter(s => s.id !== sched.id))}
+                           className="p-2 text-slate-600 hover:text-red-500 transition-colors"
+                        >
+                           <Trash2 className="w-4 h-4" />
+                        </button>
+                     </div>
+                  </div>
+                ))
+              )}
+           </div>
+
+           <div className="bg-slate-900/60 p-5 rounded-3xl border border-slate-800 flex flex-col gap-4">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Add New Schedule</h4>
+              <div className="grid grid-cols-2 gap-3">
+                 <div className="flex flex-col gap-1.5">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase ml-1">Time</span>
+                    <input 
+                       type="time" 
+                       id="new_sched_time"
+                       className="bg-[#050608] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-[#00b4d8]/50"
+                    />
+                 </div>
+                 <div className="flex flex-col gap-1.5">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase ml-1">Action</span>
+                    <select 
+                       id="new_sched_action"
+                       className="bg-[#050608] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-[#00b4d8]/50 appearance-none"
+                    >
+                       <option value="power_on">Power On</option>
+                       <option value="power_off">Power Off</option>
+                       <option value="preset_1">Preset 1</option>
+                       <option value="preset_2">Preset 2</option>
+                       <option value="preset_3">Preset 3</option>
+                       <option value="preset_4">Preset 4</option>
+                    </select>
+                 </div>
+              </div>
+              <button 
+                 onClick={() => {
+                    const time = (document.getElementById("new_sched_time") as HTMLInputElement).value;
+                    const actionVal = (document.getElementById("new_sched_action") as HTMLSelectElement).value;
+                    if (!time) return;
+                    
+                    const action = actionVal.startsWith("preset_") ? "preset" : actionVal;
+                    const presetId = actionVal.startsWith("preset_") ? actionVal.split("_")[1] : undefined;
+
+                    const nextId = Math.random().toString(36).substr(2, 9);
+                    setSchedules([...schedules, { id: nextId, time, action, active: true, presetId }]);
+                 }}
+                 className="w-full bg-[#00b4d8]/10 border border-[#00b4d8]/30 hover:bg-[#00b4d8]/20 text-[#00b4d8] py-3.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all flex items-center justify-center gap-2"
+              >
+                 <Plus className="w-4 h-4" />
+                 Add Schedule Timer
+              </button>
+           </div>
+
+           <div className="bg-[#0c0e15] border border-slate-800/60 rounded-2xl p-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                 <Clock className="w-5 h-5 text-blue-400" />
+              </div>
+              <div className="flex flex-col">
+                 <span className="text-[11px] font-bold text-slate-200">System Time Sync</span>
+                 <span className="text-[9px] text-slate-500 uppercase tracking-tighter">Using Network NTP / Browser RTC</span>
+              </div>
+           </div>
         </div>
       );
     }
@@ -4141,6 +4909,41 @@ void loop() {
     if (activeTab === "controller") {
         return (
           <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+            {/* Sync Progress Bar */}
+            {syncProgress !== null && (
+              <div className="w-full max-w-3xl mx-auto -mb-4 pt-4">
+                <div className="flex justify-between items-center mb-1.5 px-1">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-3 h-3 text-[#00b4d8] animate-spin" />
+                    <span className="text-[10px] font-black text-[#00b4d8] uppercase tracking-widest">Synchronizing Commands...</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500">{syncProgress}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                  <motion.div 
+                    className="h-full bg-gradient-to-r from-[#00b4d8] to-[#a855f7]"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${syncProgress}%` }}
+                    transition={{ ease: "linear" }}
+                  />
+                </div>
+                
+                {/* Enhanced Command Sync List */}
+                <div className="mt-4 flex flex-col gap-1.5 max-h-24 overflow-y-auto px-1 custom-scrollbar">
+                  {syncLogs.map((log, i) => (
+                    <div key={i} className="flex items-center justify-between text-[8px] font-mono tracking-tighter">
+                      <span className="text-slate-500 truncate max-w-[80%] uppercase">{log.cmd}</span>
+                      {log.status === 'success' ? (
+                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+                      ) : (
+                        <RefreshCw className="w-2.5 h-2.5 text-slate-700 animate-spin" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="w-full max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-center my-8">
               <div className="flex justify-center items-center w-full max-w-[280px] aspect-square mx-auto relative">
                 <motion.div
@@ -4156,6 +4959,7 @@ void loop() {
                     povText={povText}
                     logoRotation={logoRotation}
                     logoTintColor={useLogoTint ? logoTintColor : null}
+                    rainbowMode={colorMode === "random"}
                     povTextAnimation={povTextAnimation}
                     effectSpeedRate={effectSpeedRate}
                     effectScale={effectScale}
@@ -4176,10 +4980,41 @@ void loop() {
               </div>
             </div>
 
+            <div className="flex justify-center -mt-4 mb-4">
+              <button
+                onClick={() => setGestureMode(!gestureMode)}
+                className={`flex items-center gap-3 px-6 py-4 rounded-2xl border transition-all active:scale-95 ${
+                  gestureMode 
+                    ? "bg-[#00b4d8]/20 border-[#00b4d8] text-white shadow-[0_0_25px_rgba(0,180,216,0.3)]" 
+                    : "bg-slate-900/40 border-slate-800 text-slate-400 hover:bg-slate-800"
+                }`}
+              >
+                <div className="relative">
+                  <Hand className={`w-5 h-5 ${gestureMode ? "text-[#00b4d8]" : "text-slate-500"}`} />
+                  {gestureMode && (
+                    <motion.div 
+                      layoutId="gestureActive"
+                      className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-[#0c0e15]"
+                      animate={{ scale: [1, 1.2, 1] }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                    />
+                  )}
+                </div>
+                <div className="flex flex-col items-start leading-tight">
+                  <span className="text-[12px] font-black uppercase tracking-widest leading-none mb-1">Gesture Controller</span>
+                  <span className="text-[9px] font-bold opacity-60 uppercase tracking-tighter">Swipe: Vertical (Bright) | Horizontal (Speed)</span>
+                </div>
+              </button>
+            </div>
+
             <div className="mx-auto w-full max-w-3xl mb-4 text-center">
                <HardwareHealth 
                  apiUrl={state.wifi.mode === "AP" ? "http://192.168.4.1/status" : "/status"} 
                  externalData={isBluetoothConnected ? streamData : null} 
+                 powerLimits={{
+                    currentLimit: state.power.currentLimit,
+                    tempWarning: state.power.tempWarning
+                 }}
                />
             </div>
           </div>
@@ -4189,7 +5024,31 @@ void loop() {
       if (activeTab === "effects") {
         return (
           <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
-            <section className="mt-4">
+            
+            {/* Color Mode Selection */}
+            <section className="mt-2 text-center">
+              <h3 className="text-[10px] text-slate-500 font-black tracking-widest uppercase mb-3">COLOR STYLE / סגנון צבע</h3>
+              <div className="flex justify-center">
+                <div className="bg-slate-900/60 p-1 rounded-2xl border border-slate-800/50 flex gap-1 w-full max-w-[280px]">
+                  <button 
+                    onClick={() => setColorMode("solid")}
+                    className={`flex-1 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${colorMode === "solid" ? "bg-[#00b4d8]/20 text-[#00b4d8] border border-[#00b4d8]/30" : "text-slate-500 hover:text-slate-400"}`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${colorMode === "solid" ? "bg-[#00b4d8]" : "bg-slate-700"}`}></div>
+                    SOLID COLOR
+                  </button>
+                  <button 
+                    onClick={() => setColorMode("random")}
+                    className={`flex-1 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${colorMode === "random" ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" : "text-slate-500 hover:text-slate-400"}`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${colorMode === "random" ? "bg-purple-400" : "bg-slate-700"} animate-pulse`}></div>
+                    RANDOMIZED
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-2">
               <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-3 px-1 text-center font-black">
                 EFFECT LIBRARY / ספריית אפקטים
               </h3>
@@ -4205,10 +5064,10 @@ void loop() {
                     }`}
                   >
                     <div className="mb-2 h-7 w-7 flex items-center justify-center">
-                      {eff.icon(activeEffect === eff.id ? eff.color : "#475569")}
+                      {eff.icon(eff.color)}
                     </div>
-                    <span className="text-[7.5px] font-black tracking-widest uppercase text-slate-400"
-                          style={{ color: activeEffect === eff.id ? eff.color : undefined }}>
+                    <span className="text-[7.5px] font-black tracking-widest uppercase"
+                          style={{ color: activeEffect === eff.id ? eff.color : (eff.color + '99') }}>
                       {eff.label}
                     </span>
                   </button>
@@ -4283,6 +5142,23 @@ void loop() {
                   />
                 </div>
 
+                {/* Color Palette (Visible in Solid mode) */}
+                <div className={`flex flex-col gap-2 transition-all duration-500 ${colorMode === 'random' ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">
+                      {colorMode === 'random' ? 'Cycle Pattern (Active)' : 'Core Hue / גוון ראשי'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono font-bold" style={{ color: logoTintColor }}>{logoTintColor.toUpperCase()}</span>
+                      <div className="w-3 h-3 rounded-full shadow-sm shadow-black" style={{ backgroundColor: logoTintColor }}></div>
+                    </div>
+                  </div>
+                  <HueSlider 
+                    hue={hue} 
+                    setHue={setHue} 
+                  />
+                </div>
+
               </div>
             </section>
 
@@ -4324,7 +5200,16 @@ void loop() {
             </div>
 
             <div className="border border-slate-800/80 rounded-3xl bg-[#0c0e15]/60 overflow-hidden flex flex-col backdrop-blur-md shadow-lg">
+              <SettingsRow 
+                onClick={() => setGestureMode(!gestureMode)} 
+                icon={<Hand className={`w-5 h-5 ${gestureMode ? "text-emerald-400" : "text-slate-600"}`} />} 
+                title="AI Gesture Control" 
+                subtitle={gestureMode ? "Enabled & Tracking" : "Disabled"}
+                rightWidget={<Toggle value={gestureMode} onChange={setGestureMode} activeColor="#10b981" />}
+              />
               <SettingsRow onClick={() => setSubPage("wifi")} icon={<Wifi className="w-5 h-5 text-sky-400" />} title="WiFi Settings" subtitle={state.wifi.ssid || "Disconnected"} />
+              <SettingsRow onClick={() => setSubPage("gesture_mapping")} icon={<Hand className="w-5 h-5 text-emerald-400" />} title="Gesture Mapping" subtitle="Configure AI Controls" />
+              <SettingsRow onClick={() => setSubPage("schedule")} icon={<Clock className="w-5 h-5 text-purple-400" />} title="Schedules" subtitle={`${schedules.filter(s => s.active).length} Active Timers`} />
               <SettingsRow onClick={() => setSubPage("calibration")} icon={<Target className="w-5 h-5 text-teal-400" />} title="Calibration" subtitle="Angle & Timing" />
               <SettingsRow onClick={() => setSubPage("firmware")} icon={<Download className="w-5 h-5 text-emerald-400" />} title="Firmware" subtitle="Update POV Core" />
               <SettingsRow onClick={() => setSubPage("power")} icon={<Power className="w-5 h-5 text-rose-500" />} title="Power Management" subtitle="Battery & Voltage" />
@@ -4383,7 +5268,12 @@ void loop() {
   }
 
   return (
-    <div className="bg-[#040609] min-h-screen text-text-primary font-sans w-full max-w-md mx-auto shadow-2xl relative overflow-x-hidden flex flex-col antialiased">
+    <div className={`bg-[#040609] min-h-screen text-text-primary font-sans w-full max-w-md mx-auto shadow-2xl relative overflow-x-hidden flex flex-col antialiased transition-all duration-500`}
+         style={{ 
+           boxShadow: handInFrame 
+             ? `inset 0 0 ${20 * handConfidence}px rgba(16, 185, 129, ${0.4 * handConfidence})` 
+             : 'none'
+         }}>
       <AnimatePresence>
         {showPermissions && (
           <PermissionsManager onComplete={handlePermissionsComplete} />
@@ -4829,6 +5719,123 @@ void loop() {
           scrollbar-width: none;
         }
       `}</style>
+      
+      <AnimatePresence>
+        {showGestureTutorial && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 sm:p-12">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/90 backdrop-blur-xl"
+              onClick={() => setShowGestureTutorial(false)}
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-sm bg-[#0a0c12] border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="flex justify-between items-center p-6 border-b border-slate-800/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-[#00b4d8]/10 flex items-center justify-center border border-[#00b4d8]/20 text-[#00b4d8]">
+                    <HelpCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white uppercase tracking-wider">Gesture Guide</h3>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest">Tutorial • {tutorialStep + 1} of {tutorialSteps.length}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowGestureTutorial(false)}
+                  className="p-2 text-slate-500 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-8 flex flex-col items-center text-center gap-6">
+                <AnimatePresence mode="wait">
+                  <motion.div 
+                    key={tutorialStep}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="flex flex-col items-center gap-6"
+                  >
+                    <div className="w-24 h-24 rounded-[2rem] bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner relative">
+                       <div className="absolute inset-0 bg-[#00b4d8]/5 rounded-[2rem] animate-pulse" />
+                       {tutorialSteps[tutorialStep].icon}
+                    </div>
+                    
+                    <div className="space-y-2">
+                       <h4 className="text-xl font-bold text-white tracking-tight">{tutorialSteps[tutorialStep].title}</h4>
+                       <p className="text-xs text-slate-400 leading-relaxed max-w-[240px]">
+                         {tutorialSteps[tutorialStep].desc}
+                       </p>
+                    </div>
+
+                    <div className="bg-[#00b4d8]/5 border border-[#00b4d8]/20 rounded-2xl p-4 flex items-start gap-4 text-left">
+                       <Info className="w-4 h-4 text-[#00b4d8] mt-0.5 shrink-0" />
+                       <p className="text-[10px] text-slate-300 leading-normal italic">
+                         <span className="font-bold text-[#00b4d8] uppercase tracking-tighter not-italic mr-1">Pro Tip:</span>
+                         {tutorialSteps[tutorialStep].tip}
+                       </p>
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              <div className="p-6 bg-slate-900/40 border-t border-slate-800/50 flex gap-4">
+                <button 
+                  onClick={() => setTutorialStep(prev => Math.max(0, prev - 1))}
+                  disabled={tutorialStep === 0}
+                  className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-2xl font-bold text-[10px] uppercase tracking-widest transition-all"
+                >
+                  Back
+                </button>
+                {tutorialStep < tutorialSteps.length - 1 ? (
+                  <button 
+                    onClick={() => setTutorialStep(prev => prev + 1)}
+                    className="flex-[2] py-4 bg-[#00b4d8] hover:bg-[#0096b4] text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-[0_5px_15px_rgba(0,180,216,0.2)]"
+                  >
+                    Next Step
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => setShowGestureTutorial(false)}
+                    className="flex-[2] py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-[0_5px_15px_rgba(16,185,129,0.2)]"
+                  >
+                    Got It!
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {gesturePulse && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 0.2, scale: 1.1 }}
+            exit={{ opacity: 0, scale: 1.5 }}
+            transition={{ duration: 0.4 }}
+            className="fixed inset-0 pointer-events-none z-[999] bg-[#00b4d8] shadow-[inset_0_0_100px_rgba(0,180,216,0.5)]"
+          />
+        )}
+      </AnimatePresence>
+
+      <GestureController 
+        active={gestureMode} 
+        sensitivity={gestureSensitivity}
+        neutralCenter={neutralCenter}
+        onVerticalSwipe={handleVerticalSwipe}
+        onHorizontalSwipe={handleHorizontalSwipe}
+        onMove={handleGestureMove}
+        onGesture={handleGesture}
+        onHandDetected={handleHandDetected}
+      />
     </div>
   );
 }

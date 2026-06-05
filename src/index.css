@@ -55,6 +55,23 @@
   100% { transform: rotate(0deg); }
 }
 
+video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none;
+}
+
+video::-webkit-media-controls {
+  display: none !important;
+}
+
+video::-moz-media-controls {
+  display: none !important;
+}
+
+video::--webkit-media-controls-enclosure {
+  display: none !important;
+}
+
 body {
   background-color: var(--bg-app) !important;
   color: var(--text-primary) !important;

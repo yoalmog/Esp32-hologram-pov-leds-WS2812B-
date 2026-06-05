@@ -18,6 +18,7 @@ interface HologramSimulatorProps {
   kaleidoShape?: string;
   kaleidoLines?: string;
   kaleidoMorphSpeed?: number;
+  rainbowMode?: boolean;
 }
 
 export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
@@ -38,6 +39,7 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
   kaleidoShape = 'morphing',
   kaleidoLines = 'hybrid',
   kaleidoMorphSpeed = 1.0,
+  rainbowMode = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -145,6 +147,14 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
     };
 
     const drawEffect = (c: CanvasRenderingContext2D, t: number, rot: number) => {
+      // Apply global rainbow hue shift if in rainbow mode
+      if (rainbowMode || effect === 'rainbow') {
+        const globalHue = (t * 0.05) % 360;
+        c.canvas.style.filter = `hue-rotate(${globalHue}deg) contrast(1.2) brightness(1.1)`;
+      } else {
+        c.canvas.style.filter = '';
+      }
+
       c.save();
       c.translate(cx, cy);
 
