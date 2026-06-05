@@ -26,6 +26,7 @@ export const GestureController: React.FC<GestureControllerProps> = ({
   const workerRef = useRef<Worker | null>(null);
   const [workerReady, setWorkerReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [retryTrigger, setRetryTrigger] = useState(0);
   const [currentGesture, setCurrentGesture] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastHandPos = useRef<{ x: number; y: number } | null>(null);
@@ -156,6 +157,11 @@ export const GestureController: React.FC<GestureControllerProps> = ({
     let animationId: number | null = null;
 
     async function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError("Camera API not supported in this browser.");
+        return;
+      }
+
       try {
         localStream = await navigator.mediaDevices.getUserMedia({ 
             video: { 
@@ -164,6 +170,7 @@ export const GestureController: React.FC<GestureControllerProps> = ({
                 facingMode: "user" 
             } 
         });
+        setCameraError(null);
         if (videoRef.current) {
           videoRef.current.srcObject = localStream;
           videoRef.current.onloadedmetadata = () => {
@@ -171,9 +178,15 @@ export const GestureController: React.FC<GestureControllerProps> = ({
             animationId = requestAnimationFrame(predictLoop);
           };
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Camera error:", err);
-        setCameraError("Camera access denied or unavailable.");
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setCameraError("Camera access denied. Please allow in browser settings.");
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          setCameraError("No camera found on this device.");
+        } else {
+          setCameraError("Camera unavailable. Check if another app is using it.");
+        }
       }
     }
 
@@ -214,15 +227,28 @@ export const GestureController: React.FC<GestureControllerProps> = ({
         cancelAnimationFrame(animationId);
       }
     };
-  }, [active, workerReady, onVerticalSwipe, onHorizontalSwipe, onMove]);
+  }, [active, workerReady, onVerticalSwipe, onHorizontalSwipe, onMove, retryTrigger]);
+
+  const handleRetryCamera = () => {
+    setCameraError(null);
+    setRetryTrigger(prev => prev + 1);
+  };
 
   if (!active) return null;
 
   return (
     <div className="fixed bottom-24 right-5 z-50 flex flex-col gap-2 items-end">
       {cameraError && (
-        <div className="bg-rose-500/90 text-white text-[8px] px-2 py-1 rounded-full animate-pulse uppercase tracking-widest font-black">
-          {cameraError}
+        <div className="flex flex-col gap-1 items-end">
+          <div className="bg-rose-500/90 text-white text-[8px] px-2 py-1 rounded-full animate-pulse uppercase tracking-widest font-black">
+            {cameraError}
+          </div>
+          <button 
+            onClick={handleRetryCamera}
+            className="bg-slate-800 text-[#00b4d8] text-[7px] px-2 py-0.5 rounded border border-slate-700 uppercase font-bold hover:bg-slate-700 transition-colors"
+          >
+            Retry Camera
+          </button>
         </div>
       )}
       <div className="relative w-24 h-18 rounded-xl border-2 border-[#00b4d8] bg-black overflow-hidden shadow-2xl">

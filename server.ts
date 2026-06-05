@@ -36,11 +36,30 @@ async function startServer() {
     res.json({ status: "success" });
   });
 
+  app.post("/upload", express.raw({ type: "*/*", limit: "50mb" }), (req, res) => {
+    console.log(`[Server] Received binary upload: ${req.body.length} bytes`);
+    res.json({ status: "success", received: req.body.length });
+  });
+
   app.get("/scan", (req, res) => {
     res.json([
       { ssid: "HoloSpin_WiFi_AP", rssi: -45, secure: false },
       { ssid: "Home_WiFi_2.4G", rssi: -68, secure: true }
     ]);
+  });
+
+  app.get("/diagnostic", (req, res) => {
+    res.json({
+      heap: 124500,
+      uptime: process.uptime(),
+      tasks: 8,
+      wifi_rssi: -42,
+      temp: 45.2
+    });
+  });
+
+  app.get("/logs", (req, res) => {
+    res.send("[SYS] Boot complete\n[WIFI] Connected\n[POV] Frame buffer ready\n[HTTP] Server started on port 80");
   });
 
   // Vite middleware for development

@@ -64,20 +64,38 @@ export const PermissionsManager: React.FC<Props> = ({ onComplete }) => {
 
     // 5. Camera
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      stream.getTracks().forEach(t => t.stop());
-      setStatus(s => ({ ...s, camera: 'granted' }));
-    } catch (e) {
-      setStatus(s => ({ ...s, camera: 'denied' }));
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus(s => ({ ...s, camera: 'error' }));
+      } else {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(t => t.stop());
+        setStatus(s => ({ ...s, camera: 'granted' }));
+      }
+    } catch (e: any) {
+      console.warn("Camera permission error:", e);
+      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+        setStatus(s => ({ ...s, camera: 'denied' }));
+      } else {
+        setStatus(s => ({ ...s, camera: 'error' }));
+      }
     }
 
     // 6. Microphone
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(t => t.stop());
-      setStatus(s => ({ ...s, microphone: 'granted' }));
-    } catch (e) {
-      setStatus(s => ({ ...s, microphone: 'denied' }));
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus(s => ({ ...s, microphone: 'error' }));
+      } else {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop());
+        setStatus(s => ({ ...s, microphone: 'granted' }));
+      }
+    } catch (e: any) {
+      console.warn("Mic permission error:", e);
+      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+        setStatus(s => ({ ...s, microphone: 'denied' }));
+      } else {
+        setStatus(s => ({ ...s, microphone: 'error' }));
+      }
     }
 
     setIsInitializing(false);
@@ -171,6 +189,8 @@ const PermissionRow = ({ icon, label, status }: { icon: React.ReactNode, label: 
       <ShieldCheck className="w-4 h-4 text-[#22c55e]" />
     ) : status === 'pending' ? (
       <div className="w-1.5 h-1.5 rounded-full bg-slate-600 animate-pulse"></div>
+    ) : status === 'error' ? (
+      <div className="text-[9px] font-bold text-amber-500 uppercase tracking-tighter">Not Supported</div>
     ) : (
       <ShieldAlert className="w-4 h-4 text-[#ef4444]" />
     )}

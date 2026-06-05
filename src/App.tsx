@@ -788,7 +788,8 @@ export default function App() {
       await sendCommand({ category: "calibrate", update: payload });
     } else if (isConnected) {
       try {
-        const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/calibrate" : "/calibrate";
+        const isLocalHost = window.location.hostname === "192.168.4.1";
+        const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/calibrate" : "/calibrate";
         await fetch(targetUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -912,6 +913,10 @@ export default function App() {
       title: 'Peace Sign', 
       desc: 'Extend index and middle fingers. Used for loading specified presets.', 
       icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
+      animation: {
+        animate: { y: [0, -10, 0], rotate: [0, 5, 0] },
+        transition: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+      },
       tip: "Keep fingers separated for best recognition."
     },
     { 
@@ -919,6 +924,10 @@ export default function App() {
       title: 'Open Palm', 
       desc: 'Show all 5 fingers clearly. Often mapped to high-energy effects like Fire.', 
       icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
+      animation: {
+        animate: { scale: [1, 1.1, 1] },
+        transition: { duration: 1.5, repeat: Infinity, ease: "easeInOut" }
+      },
       tip: "Keep your palm facing the camera directly."
     },
     { 
@@ -926,6 +935,10 @@ export default function App() {
       title: 'Closed Fist', 
       desc: 'Typical for power-off or global stops.', 
       icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
+      animation: {
+        animate: { scale: [1, 0.85, 1], filter: ["blur(0px)", "blur(1px)", "blur(0px)"] },
+        transition: { duration: 0.8, repeat: Infinity, ease: "linear" }
+      },
       tip: "Tuck your thumb for a cleaner profile."
     },
     { 
@@ -933,6 +946,10 @@ export default function App() {
       title: 'Vertical Swiping', 
       desc: 'Move your hand up or down to adjust brightness.', 
       icon: <MoveVertical className="w-12 h-12 text-[#00b4d8]" />,
+      animation: {
+        animate: { y: [-15, 15, -15] },
+        transition: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+      },
       tip: "Use slow, steady movements."
     },
     { 
@@ -940,6 +957,10 @@ export default function App() {
       title: 'Horizontal Swiping', 
       desc: 'Move left or right to change effect speed.', 
       icon: <MoveHorizontal className="w-12 h-12 text-[#00b4d8]" />,
+      animation: {
+        animate: { x: [-15, 15, -15] },
+        transition: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+      },
       tip: "Horizontal movement controls the motor density."
     }
   ];
@@ -1237,7 +1258,8 @@ export default function App() {
   
   const handleDownloadLogs = async () => {
     try {
-      const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/logs" : "/logs";
+      const isLocalHost = window.location.hostname === "192.168.4.1";
+      const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/logs" : "/logs";
       const res = await fetch(targetUrl);
       if (!res.ok) throw new Error("Failed to fetch logs");
       const logs = await res.text();
@@ -1331,7 +1353,8 @@ export default function App() {
 
     try {
       // Real diagnostic API call to ESP32
-      const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/diagnostic" : "/diagnostic";
+      const isLocalHost = window.location.hostname === "192.168.4.1";
+      const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/diagnostic" : "/diagnostic";
       const res = await fetch(targetUrl, { signal: diagnosticAbortControllerRef.current.signal });
       clearTimeout(timeoutId);
       if (!res.ok) throw new Error("Diagnostics API failed");
@@ -1410,17 +1433,19 @@ export default function App() {
         // Try to reach the default ESP32 AP IP
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), 2000);
-        const wifiRes = await fetch("http://192.168.4.1/api/health", { 
+        const isLocalHost = window.location.hostname === "192.168.4.1";
+        const wifiRes = await fetch(isLocalHost ? "http://192.168.4.1/api/health" : "/api/health", { 
           signal: controller.signal,
           mode: 'no-cors' // Allow reaching even if CORS not set (diagnostic only)
         }).catch(() => null);
         clearTimeout(id);
 
         if (wifiRes) {
+          const isReal = isLocalHost;
           bleDevices.push({
-            id: "192.168.4.1",
-            name: "Holospin_Wi-Fi",
-            ip: "192.168.4.1",
+            id: isReal ? "192.168.4.1" : "simulated",
+            name: isReal ? "Holospin_Wi-Fi" : "Holospin_Simulated",
+            ip: isReal ? "192.168.4.1" : "Local",
             strength: -30,
             type: "WIFI"
           });
@@ -1479,7 +1504,8 @@ export default function App() {
     setToastMessage(`משדר הגדרות WiFi למקרן... / Sending WiFi settings...`);
     
     try {
-      const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/config" : "/config";
+      const isLocalHost = window.location.hostname === "192.168.4.1";
+      const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/config" : "/config";
       const res = await fetch(targetUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1545,7 +1571,8 @@ export default function App() {
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 2000);
       
-      const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/status" : "/status";
+      const isLocalHost = window.location.hostname === "192.168.4.1";
+      const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/status" : "/status";
       
       const res = await fetch(targetUrl, { signal: controller.signal });
       clearTimeout(id);
@@ -1611,7 +1638,8 @@ export default function App() {
         await sendCommand(payload);
       } else if (isConnected) {
         try {
-          const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/control" : "/control";
+          const isLocalHost = window.location.hostname === "192.168.4.1";
+          const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/control" : "/control";
           await fetch(targetUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1708,7 +1736,8 @@ export default function App() {
     try {
       setCalibrationStage("requesting");
       setShowCalibrateModal(true);
-      const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/calibrate" : "/calibrate";
+      const isLocalHost = window.location.hostname === "192.168.4.1";
+      const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/calibrate" : "/calibrate";
       
       try {
         const res = await fetch(targetUrl, { method: "POST" });
@@ -1761,7 +1790,9 @@ export default function App() {
 
       setToastMessage("Uploading frames... / מעלה פריימים ");
       
-      const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/upload" : "/upload";
+      const isLocalHost = window.location.hostname === "192.168.4.1";
+      const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/upload" : "/upload";
+      
       const response = await fetch(targetUrl, {
         method: "POST",
         body: flatBuffer
@@ -1770,11 +1801,14 @@ export default function App() {
       if (response.ok) {
         setToastMessage("Sync complete! Displaying hologram / סנכרון הושלם! מציג הולוגרמה");
       } else {
-        throw new Error("Upload failed");
+        const errorText = await response.text().catch(() => "Unknown error");
+        throw new Error(`Upload failed (${response.status}): ${errorText}`);
       }
-    } catch (err) {
-      console.error(err);
-      alert("Hardware communication error / שגיאת תקשורת עם המכשיר");
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      const msg = err.message || "Unknown error";
+      setToastMessage(`Upload failed / שגיאה בהעלאה: ${msg}`);
+      alert(`Hardware communication error / שגיאת תקשורת עם המכשיר: ${msg}`);
     }
   };
 
@@ -1890,7 +1924,8 @@ export default function App() {
     // Fallback to HTTP API if network connected
     else if (isConnected) {
       try {
-        const targetUrl = state.wifi.mode === "AP" ? "http://192.168.4.1/config" : "/config";
+        const isLocalHost = window.location.hostname === "192.168.4.1";
+        const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/config" : "/config";
         await fetch(targetUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -5766,7 +5801,12 @@ void loop() {
                   >
                     <div className="w-24 h-24 rounded-[2rem] bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner relative">
                        <div className="absolute inset-0 bg-[#00b4d8]/5 rounded-[2rem] animate-pulse" />
-                       {tutorialSteps[tutorialStep].icon}
+                       <motion.div
+                         key={`icon-${tutorialStep}`}
+                         {...(tutorialSteps[tutorialStep] as any).animation}
+                       >
+                         {tutorialSteps[tutorialStep].icon}
+                       </motion.div>
                     </div>
                     
                     <div className="space-y-2">
