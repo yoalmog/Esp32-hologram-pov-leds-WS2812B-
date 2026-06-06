@@ -12,6 +12,8 @@ import { CalibrationPanel } from "./components/CalibrationPanel";
 
 import { HoloSlicer } from "./components/HoloSlicer";
 import { GestureController } from "./components/GestureController";
+import { AdvancedSyncPanel } from "./components/AdvancedSyncPanel";
+import { BufferHealthIndicator } from "./components/BufferHealthIndicator";
 import {
   LineChart,
   Line,
@@ -78,6 +80,10 @@ import {
   MapPin,
   Mic,
   Hand,
+  ThumbsUp,
+  Pointer,
+  HandMetal,
+  ThumbsDown,
   FolderOpen,
   ShieldAlert,
 } from "lucide-react";
@@ -899,6 +905,8 @@ export default function App() {
   const [handInFrame, setHandInFrame] = useState(false);
   const [handConfidence, setHandConfidence] = useState(0);
   const [gesturePulse, setGesturePulse] = useState(false);
+  const [activeRawGesture, setActiveRawGesture] = useState<string | null>(null);
+  const activeGestureTimeout = useRef<NodeJS.Timeout | null>(null);
   const [syncHistory, setSyncHistory] = useState<{ time: string; quality: number }[]>([]);
   const [gestureSensitivity, setGestureSensitivity] = useState(20); // 1-100 range
   const [neutralCenter, setNeutralCenter] = useState({ x: 0.5, y: 0.5 });
@@ -911,57 +919,90 @@ export default function App() {
     { 
       id: 'peace', 
       title: 'Peace Sign', 
-      desc: 'Extend index and middle fingers. Used for loading specified presets.', 
+      desc: 'Extend your index and middle fingers in a "V" shape. This is commonly mapped to loading specific beautiful effects like Rainbow.', 
       icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
       animation: {
-        animate: { y: [0, -10, 0], rotate: [0, 5, 0] },
+        animate: { y: [0, -10, 0], rotate: [0, 5, -5, 0] },
         transition: { duration: 2, repeat: Infinity, ease: "easeInOut" }
       },
-      tip: "Keep fingers separated for best recognition."
+      tip: "Keep fingers clearly separated for best recognition."
     },
     { 
       id: 'palm', 
       title: 'Open Palm', 
-      desc: 'Show all 5 fingers clearly. Often mapped to high-energy effects like Fire.', 
-      icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
+      desc: 'Show all 5 fingers clearly. Often mapped to high-energy visual effects like Fire.', 
+      icon: <Hand className="w-12 h-12 text-[#f97316]" />,
       animation: {
-        animate: { scale: [1, 1.1, 1] },
+        animate: { scale: [1, 1.15, 1], filter: ["drop-shadow(0 0 0px #f97316)", "drop-shadow(0 0 15px #f97316)", "drop-shadow(0 0 0px #f97316)"] },
         transition: { duration: 1.5, repeat: Infinity, ease: "easeInOut" }
       },
-      tip: "Keep your palm facing the camera directly."
+      tip: "Keep your palm flat and facing the camera directly."
     },
     { 
       id: 'fist', 
       title: 'Closed Fist', 
-      desc: 'Typical for power-off or global stops.', 
-      icon: <Hand className="w-12 h-12 text-[#00b4d8]" />,
+      desc: 'Typical for power-off or global stops. Clench your hand into a tight fist in view of the camera.', 
+      icon: <Hand className="w-12 h-12 text-[#ef4444]" />,
       animation: {
-        animate: { scale: [1, 0.85, 1], filter: ["blur(0px)", "blur(1px)", "blur(0px)"] },
-        transition: { duration: 0.8, repeat: Infinity, ease: "linear" }
+        animate: { scale: [1, 0.85, 1], y: [0, 5, 0] },
+        transition: { duration: 1, repeat: Infinity, ease: "easeInOut" }
       },
-      tip: "Tuck your thumb for a cleaner profile."
+      tip: "Tuck your thumb fully for a cleaner, recognizable profile."
+    },
+    { 
+      id: 'thumbs_up', 
+      title: 'Thumbs Up', 
+      desc: 'Show a clear thumbs-up gesture. Excellent for Power On or confirming actions.', 
+      icon: <ThumbsUp className="w-12 h-12 text-[#22c55e]" />,
+      animation: {
+        animate: { y: [0, -15, 0], scale: [1, 1.1, 1] },
+        transition: { duration: 1.2, repeat: Infinity, ease: "easeOut" }
+      },
+      tip: "Ensure your hand is upright and the thumb points straight up."
+    },
+    { 
+      id: 'point_up', 
+      title: 'Point Up', 
+      desc: 'Extend just your index finger straight up. Often used for precise effects like the Holographic Clock.', 
+      icon: <Pointer className="w-12 h-12 text-[#a855f7]" />,
+      animation: {
+        animate: { y: [0, -10, 0] },
+        transition: { duration: 1.5, repeat: Infinity, ease: "easeInOut" }
+      },
+      tip: "Keep the rest of your hand tightly closed."
+    },
+    { 
+      id: 'rock_on', 
+      title: 'Rock On 🤘', 
+      desc: 'Extend your index and pinky fingers. Excellent for triggering intense mode or Aurora effects.', 
+      icon: <HandMetal className="w-12 h-12 text-[#f43f5e]" />,
+      animation: {
+        animate: { rotate: [0, 15, -15, 0], scale: [1, 1.2, 1] },
+        transition: { duration: 0.6, repeat: Infinity, ease: "linear" }
+      },
+      tip: "Rock on! Keep the middle fingers fully tucked."
     },
     { 
       id: 'swipe_v', 
       title: 'Vertical Swiping', 
-      desc: 'Move your hand up or down to adjust brightness.', 
+      desc: 'In addition to static poses, move your open hand up or down dynamically to adjust brightness on the fly.', 
       icon: <MoveVertical className="w-12 h-12 text-[#00b4d8]" />,
       animation: {
-        animate: { y: [-15, 15, -15] },
+        animate: { y: [-15, 15, -15], opacity: [0.5, 1, 0.5] },
         transition: { duration: 2, repeat: Infinity, ease: "easeInOut" }
       },
-      tip: "Use slow, steady movements."
+      tip: "Use slow, steady movements. Extreme speed may be missed."
     },
     { 
       id: 'swipe_h', 
       title: 'Horizontal Swiping', 
-      desc: 'Move left or right to change effect speed.', 
+      desc: 'Move your open hand left or right across the screen to change the simulated motor speed.', 
       icon: <MoveHorizontal className="w-12 h-12 text-[#00b4d8]" />,
       animation: {
-        animate: { x: [-15, 15, -15] },
+        animate: { x: [-15, 15, -15], opacity: [0.5, 1, 0.5] },
         transition: { duration: 2, repeat: Infinity, ease: "easeInOut" }
       },
-      tip: "Horizontal movement controls the motor density."
+      tip: "Horizontal movement directly maps to rotation speed."
     }
   ];
   const [gestureMapping, setGestureMapping] = useState<Record<string, string>>(() => {
@@ -1795,6 +1836,9 @@ export default function App() {
       
       const response = await fetch(targetUrl, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream"
+        },
         body: flatBuffer
       });
 
@@ -3827,6 +3871,8 @@ void loop() {
               </div>
             )}
           </div>
+          
+          <AdvancedSyncPanel />
 
           <div className="border border-[#7f1d1d]/30 bg-[#450a0a]/20 p-4 rounded-2xl flex items-start gap-4 mt-2">
             <AlertTriangle className="w-6 h-6 text-[#ef4444] shrink-0" />
@@ -4212,19 +4258,38 @@ void loop() {
                     type="file"
                     accept={uploadDest === "image" ? "image/*" : "video/*"}
                     className="hidden"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const newFile = {
-                          name: file.name,
-                          size: (file.size / 1024).toFixed(0) + " KB",
-                          type: uploadDest,
-                          path: `/${uploadDest === "image" ? "images" : "videos"}/${file.name}`,
-                          selected: true
-                        };
-                        const newFiles = [...(state.storage?.files || []), newFile];
-                        updateState("storage", "files", newFiles);
-                        setToastMessage(`קובץ ${file.name} הועלה בהצלחה לתיקיית /${uploadDest === "image" ? "images" : "videos"}/ ונרשם להקרנה!`);
+                        setToastMessage(`מעלה קובץ... / Uploading ${file.name}...`);
+                        try {
+                          const formData = new FormData();
+                          formData.append('file', file);
+                          
+                          const res = await fetch('/api/upload-file', {
+                            method: 'POST',
+                            body: formData
+                          });
+                          
+                          if (!res.ok) throw new Error("Upload failed");
+                          
+                          const data = await res.json();
+                          const fileUrl = data.url;
+                          
+                          const newFile = {
+                            name: file.name,
+                            size: (file.size / 1024).toFixed(0) + " KB",
+                            type: uploadDest,
+                            path: fileUrl,
+                            selected: true
+                          };
+                          const newFiles = [...(state.storage?.files || []), newFile];
+                          updateState("storage", "files", newFiles);
+                          setToastMessage(`קובץ ${file.name} הועלה בהצלחה ונרשם להקרנה!`);
+                        } catch (err) {
+                          console.error(err);
+                          setToastMessage("שגיאה בהעלאת הקובץ / Upload error");
+                        }
                       }
                     }}
                   />
@@ -4344,19 +4409,30 @@ void loop() {
                 { key: 'thumbs_up', label: 'Thumbs Up' },
                 { key: 'point_up', label: 'Pointing Up' },
                 { key: 'rock_on', label: 'Rock On' }
-              ].map((ges) => (
-                <div key={ges.key} className="bg-[#0c0e15] border border-slate-800 rounded-2xl p-4 flex flex-col gap-4">
-                   <div className="flex items-center justify-between">
+              ].map((ges) => {
+                const isActive = activeRawGesture === ges.key;
+                return (
+                <div key={ges.key} className={`relative bg-[#0c0e15] border rounded-2xl p-4 flex flex-col gap-4 overflow-hidden transition-all duration-300 ${
+                  isActive ? 'border-[#00b4d8] shadow-[0_0_20px_rgba(0,180,216,0.3)] scale-[1.02]' : 'border-slate-800'
+                }`}>
+                   {isActive && <div className="absolute inset-0 bg-[#00b4d8]/10 animate-pulse pointer-events-none" />}
+                   
+                   <div className="flex items-center justify-between relative z-10">
                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[#00b4d8]">
+                        <div className={`p-2.5 rounded-xl border transition-all duration-300 ${
+                          isActive ? 'bg-[#00b4d8]/20 border-[#00b4d8] text-white shadow-[0_0_10px_rgba(0,180,216,0.4)] text-[#00b4d8]' : 'bg-slate-900 border-slate-800 text-[#00b4d8]'
+                        }`}>
                            <Hand className="w-4 h-4" />
                         </div>
-                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-300">{ges.label}</span>
+                        <span className={`text-[11px] font-black uppercase tracking-widest ${isActive ? 'text-white' : 'text-slate-300'}`}>{ges.label}</span>
                      </div>
-                     <div className="text-[9px] font-mono text-slate-500 bg-slate-900/50 px-2 py-0.5 rounded border border-slate-800/50">landmarker_v1</div>
+                     <div className="flex gap-2">
+                       {isActive && <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 uppercase tracking-widest animate-pulse">DETECTED</span>}
+                       <div className="text-[9px] font-mono text-slate-500 bg-slate-900/50 px-2 py-0.5 rounded border border-slate-800/50">landmarker_v1</div>
+                     </div>
                    </div>
 
-                   <div className="flex flex-col gap-1.5">
+                   <div className="flex flex-col gap-1.5 relative z-10">
                       <span className="text-[9px] font-bold text-slate-500 uppercase ml-1">Target Action</span>
                       <select 
                         value={currentMapping[ges.key]}
@@ -4364,7 +4440,9 @@ void loop() {
                           const val = e.target.value;
                           setPendingMapping(prev => ({ ...(prev || gestureMapping), [ges.key]: val }));
                         }}
-                        className="w-full bg-[#050608] border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-200 focus:outline-none focus:border-[#00b4d8]/50 appearance-none cursor-pointer"
+                        className={`w-full bg-[#050608] border rounded-xl px-4 py-3 text-xs text-slate-200 focus:outline-none appearance-none cursor-pointer transition-colors ${
+                          isActive ? 'border-[#00b4d8]/50 focus:border-[#00b4d8]' : 'border-slate-800 focus:border-[#00b4d8]/50'
+                        }`}
                       >
                          <option value="power_on">Activate Device (On)</option>
                          <option value="power_off">Deactivate Device (Off)</option>
@@ -4377,7 +4455,7 @@ void loop() {
                       </select>
                    </div>
                 </div>
-              ))}
+              )})}
            </div>
 
            {hasChanges && (
@@ -4703,14 +4781,22 @@ void loop() {
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          setLogoUrl(reader.result as string);
-                        };
-                        reader.readAsDataURL(file);
+                         setToastMessage(`מעלה תמונה... / Uploading image...`);
+                         try {
+                           const formData = new FormData();
+                           formData.append('file', file);
+                           const res = await fetch('/api/upload-file', { method: 'POST', body: formData });
+                           if (!res.ok) throw new Error("Upload failed");
+                           const data = await res.json();
+                           setLogoUrl(data.url);
+                           setToastMessage(`תמונה הועלתה בהצלחה! / Image uploaded!`);
+                         } catch (err) {
+                           console.error(err);
+                           setToastMessage("שגיאה בהעלאה / Upload failed");
+                         }
                       }
                     }}
                     className="hidden"
@@ -4792,12 +4878,23 @@ void loop() {
                   <input
                     type="file"
                     accept="video/*"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const fileUrl = URL.createObjectURL(file);
-                        setSynthVideoUrl(fileUrl);
-                        safeSaveLocal("synthVideoUrl", fileUrl);
+                        setToastMessage(`מעלה סרטון... / Uploading video...`);
+                        try {
+                          const formData = new FormData();
+                          formData.append('file', file);
+                          const res = await fetch('/api/upload-file', { method: 'POST', body: formData });
+                          if (!res.ok) throw new Error("Upload failed");
+                          const data = await res.json();
+                          setSynthVideoUrl(data.url);
+                          safeSaveLocal("synthVideoUrl", data.url);
+                          setToastMessage(`סרטון הועלה בהצלחה! / Video uploaded!`);
+                        } catch (err) {
+                           console.error(err);
+                           setToastMessage("שגיאה בהעלאה / Upload failed");
+                        }
                       }
                     }}
                     className="hidden"
@@ -4807,27 +4904,30 @@ void loop() {
 
               {/* Current Active Preview */}
               {synthVideoUrl && (
-                <div className="flex items-center justify-between border border-slate-800/80 bg-slate-950/50 rounded-xl p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded border border-slate-800 bg-black/55 overflow-hidden flex items-center justify-center">
-                      <video src={synthVideoUrl} preload="auto" crossOrigin="anonymous" muted autoPlay loop playsInline className="w-full h-full object-cover" />
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between border border-slate-800/80 bg-slate-950/50 rounded-xl p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded border border-slate-800 bg-black/55 overflow-hidden flex items-center justify-center">
+                        <video src={synthVideoUrl} preload="auto" crossOrigin="anonymous" muted autoPlay loop playsInline className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-bold text-slate-200">סרטון פעיל / Active Video</span>
+                        <span className="text-[9px] text-slate-500 truncate max-w-[130px]">
+                          {synthVideoUrl.startsWith("blob:") ? "Custom Video Upload 🎥" : synthVideoUrl.split("/").pop()}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-bold text-slate-200">סרטון פעיל / Active Video</span>
-                      <span className="text-[9px] text-slate-500 truncate max-w-[130px]">
-                        {synthVideoUrl.startsWith("blob:") ? "Custom Video Upload 🎥" : synthVideoUrl.split("/").pop()}
-                      </span>
-                    </div>
+                    <button
+                      onClick={() => {
+                        setSynthVideoUrl(null);
+                        safeRemoveLocal("synthVideoUrl");
+                      }}
+                      className="text-[9px] font-bold tracking-widest text-rose-500 hover:text-rose-400 uppercase"
+                    >
+                      CLEAR
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      setSynthVideoUrl(null);
-                      safeRemoveLocal("synthVideoUrl");
-                    }}
-                    className="text-[9px] font-bold tracking-widest text-rose-500 hover:text-rose-400 uppercase"
-                  >
-                    CLEAR
-                  </button>
+                  <BufferHealthIndicator videoUrl={synthVideoUrl} />
                 </div>
               )}
             </div>
@@ -5772,14 +5872,23 @@ void loop() {
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               className="relative w-full max-w-sm bg-[#0a0c12] border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col"
             >
-              <div className="flex justify-between items-center p-6 border-b border-slate-800/50">
+               <div className="flex justify-between items-center p-6 border-b border-slate-800/50">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-[#00b4d8]/10 flex items-center justify-center border border-[#00b4d8]/20 text-[#00b4d8]">
                     <HelpCircle className="w-5 h-5" />
                   </div>
-                  <div>
+                  <div className="flex flex-col gap-1">
                     <h3 className="text-sm font-black text-white uppercase tracking-wider">Gesture Guide</h3>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-widest">Tutorial • {tutorialStep + 1} of {tutorialSteps.length}</p>
+                    <div className="flex gap-1.5 items-center">
+                      {tutorialSteps.map((_, i) => (
+                        <div 
+                          key={i} 
+                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                            i === tutorialStep ? 'w-4 bg-[#00b4d8]' : 'w-1.5 bg-slate-700'
+                          }`}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <button 
@@ -5873,7 +5982,12 @@ void loop() {
         onVerticalSwipe={handleVerticalSwipe}
         onHorizontalSwipe={handleHorizontalSwipe}
         onMove={handleGestureMove}
-        onGesture={handleGesture}
+        onGesture={(gesture) => {
+           setActiveRawGesture(gesture);
+           if (activeGestureTimeout.current) clearTimeout(activeGestureTimeout.current);
+           activeGestureTimeout.current = setTimeout(() => setActiveRawGesture(null), 500);
+           handleGesture(gesture);
+        }}
         onHandDetected={handleHandDetected}
       />
     </div>

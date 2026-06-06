@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Zap, CheckCircle2, Loader2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, Zap, CheckCircle2, Loader2, Video as VideoIcon, Camera } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface Props {
@@ -9,10 +9,12 @@ interface Props {
 export const HoloSlicer: React.FC<Props> = ({ onUpload }) => {
   const [preview, setPreview] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const processImage = (img: HTMLImageElement) => {
+  const processImage = (img: HTMLImageElement | HTMLVideoElement) => {
     setIsProcessing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -39,8 +41,12 @@ export const HoloSlicer: React.FC<Props> = ({ onUpload }) => {
         const x = center.x + Math.cos(angle) * radius;
         const y = center.y + Math.sin(angle) * radius;
         
-        const pixel = ctx.getImageData(x, y, 1, 1).data;
-        sliceData.push([pixel[0], pixel[1], pixel[2]]);
+        try {
+           const pixel = ctx.getImageData(x, y, 1, 1).data;
+           sliceData.push([pixel[0], pixel[1], pixel[2]]);
+        } catch (e) {
+           sliceData.push([0,0,0]);
+        }
       }
       result.push(sliceData);
     }
@@ -80,29 +86,64 @@ export const HoloSlicer: React.FC<Props> = ({ onUpload }) => {
     });
   };
 
+  const handleCaptureFrame = () => {
+    if (videoRef.current) {
+      processImage(videoRef.current);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="relative">
         <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-800 hover:border-[#38bdf8] rounded-2xl py-10 px-6 cursor-pointer transition bg-slate-900/30 group">
-          <Upload className="w-10 h-10 text-slate-500 mb-3 group-hover:text-[#38bdf8] transition-colors" />
-          <span className="text-sm font-bold text-slate-300">Upload Logo / Image</span>
-          <span className="text-[10px] text-slate-500 mt-2 uppercase tracking-widest">Supports JPG, PNG (Square works best)</span>
+          {mediaType === 'image' ? (
+            <ImageIcon className="w-10 h-10 text-slate-500 mb-3 group-hover:text-[#38bdf8] transition-colors" />
+          ) : (
+            <VideoIcon className="w-10 h-10 text-slate-500 mb-3 group-hover:text-[#38bdf8] transition-colors" />
+          )}
+          <span className="text-sm font-bold text-slate-300">
+            {mediaType === 'image' ? 'Upload Logo / Image' : 'Upload Video Clip'}
+          </span>
+          <span className="text-[10px] text-slate-500 mt-2 uppercase tracking-widest">
+            {mediaType === 'image' ? 'Supports JPG, PNG' : 'Supports MP4, WebM, MOV'}
+          </span>
           <input
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) {
                 const url = URL.createObjectURL(file);
+                const isVideo = file.type.startsWith('video/');
+                setMediaType(isVideo ? 'video' : 'image');
                 setPreview(url);
-                const img = new Image();
-                img.onload = () => processImage(img);
-                img.src = url;
+                if (!isVideo) {
+                  const img = new Image();
+                  img.onload = () => processImage(img);
+                  img.src = url;
+                }
               }
             }}
           />
         </label>
+        
+        <div className="absolute top-2 right-2 flex gap-1">
+          <button 
+            type="button"
+            onClick={() => setMediaType('image')}
+            className={`p-1.5 rounded-lg border transition ${mediaType === 'image' ? 'bg-[#38bdf8]/20 border-[#38bdf8] text-[#38bdf8]' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+          </button>
+          <button 
+            type="button"
+            onClick={() => setMediaType('video')}
+            className={`p-1.5 rounded-lg border transition ${mediaType === 'video' ? 'bg-[#38bdf8]/20 border-[#38bdf8] text-[#38bdf8]' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+          >
+            <VideoIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <canvas ref={canvasRef} width={128} height={128} className="hidden" />
@@ -113,6 +154,26 @@ export const HoloSlicer: React.FC<Props> = ({ onUpload }) => {
           animate={{ opacity: 1, scale: 1 }}
           className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col items-center gap-4"
         >
+          {mediaType === 'video' && (
+            <div className="w-full flex flex-col gap-3">
+              <div className="relative aspect-square max-w-[200px] mx-auto rounded-xl overflow-hidden border border-slate-800 bg-black">
+                <video 
+                  ref={videoRef} 
+                  src={preview} 
+                  controls 
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <button
+                onClick={handleCaptureFrame}
+                className="w-full py-2 bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition active:scale-95"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                Capture & Slice Frame
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-[#38bdf8]" />

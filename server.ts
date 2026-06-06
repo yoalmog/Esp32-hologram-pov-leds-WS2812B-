@@ -1,15 +1,53 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
+import multer from "multer";
 import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Ensure upload directory exists
+  const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
+  // Multer configuration
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, uniqueSuffix + '-' + file.originalname);
+    }
+  });
+  const upload = multer({ storage: storage });
+
   app.use(express.json());
+  app.use('/uploads', express.static(uploadDir));
 
   // --- REAL BACKEND ENDPOINTS (Proxying or Handling) ---
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+  app.post("/api/upload-file", upload.single('file'), (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.json({ status: "success", url: fileUrl, filename: req.file.filename });
+  });
+
+  app.get("/api/files", (req, res) => {
+    try {
+      const files = fs.readdirSync(uploadDir);
+      res.json(files.map(f => ({ name: f, url: `/uploads/${f}` })));
+    } catch (e) {
+      res.status(500).json({ error: "Failed to list files" });
+    }
+  });
 
   let mockStatus = "ready";
   let mockRpm = 100;
@@ -37,8 +75,10 @@ async function startServer() {
   });
 
   app.post("/upload", express.raw({ type: "*/*", limit: "50mb" }), (req, res) => {
-    console.log(`[Server] Received binary upload: ${req.body.length} bytes`);
-    res.json({ status: "success", received: req.body.length });
+    const data = req.body;
+    const len = data ? (Buffer.isBuffer(data) ? data.length : Object.keys(data).length) : 0;
+    console.log(`[Server] Received upload: ${len} units`);
+    res.json({ status: "success", received: len });
   });
 
   app.get("/scan", (req, res) => {

@@ -2619,7 +2619,7 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
             
             // Draw uploaded video frames first if available!
             const video = videoRef.current;
-            const hasVideo = !!(video && !video.paused && !video.ended && video.videoWidth > 0);
+            const hasVideo = !!(video && video.readyState >= 2 && video.videoWidth > 0);
             if (hasVideo) {
               c.save();
               c.beginPath();

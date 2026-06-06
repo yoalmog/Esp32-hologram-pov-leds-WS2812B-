@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
 interface GestureControllerProps {
@@ -23,17 +23,19 @@ export const GestureController: React.FC<GestureControllerProps> = ({
   onHandDetected,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const workerRef = useRef<Worker | null>(null);
-  const [workerReady, setWorkerReady] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  const [modelReady, setModelReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [retryTrigger, setRetryTrigger] = useState(0);
   const [currentGesture, setCurrentGesture] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const lastHandPos = useRef<{ x: number; y: number } | null>(null);
   const lastMovePos = useRef<{ x: number; y: number } | null>(null);
-  const frameCounter = useRef(0);
-  const isProcessing = useRef(false);
+  const lastVideoTime = useRef(-1);
 
+  // Clear current gesture text
   useEffect(() => {
     let timeout: NodeJS.Timeout;
     if (currentGesture) {
@@ -42,37 +44,114 @@ export const GestureController: React.FC<GestureControllerProps> = ({
     return () => clearTimeout(timeout);
   }, [currentGesture]);
 
+  // Init Mediapipe
   useEffect(() => {
-    if (active && !workerRef.current) {
-      const worker = new Worker(new URL('../workers/gestureWorker.ts', import.meta.url), { type: 'module' });
-      
-      worker.onmessage = (e) => {
-        if (e.data.type === 'READY') {
-          setWorkerReady(true);
-        } else if (e.data.type === 'RESULTS') {
-          isProcessing.current = false;
-          handleResults(e.data.results);
-        }
-      };
-
-      worker.postMessage({ type: 'INIT' });
-      workerRef.current = worker;
+    let active = true;
+    async function initModel() {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+        if (!active) return;
+        const landmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1
+        });
+        if (!active) return;
+        handLandmarkerRef.current = landmarker;
+        setModelReady(true);
+      } catch (err) {
+        console.error("Failed to load Mediapipe model:", err);
+      }
     }
-
+    initModel();
     return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
+      active = false;
+      if (handLandmarkerRef.current) {
+        handLandmarkerRef.current.close();
+        handLandmarkerRef.current = null;
       }
     };
-  }, [active]);
+  }, []);
 
-  const handleResults = (results: any) => {
-    const ctx = canvasRef.current?.getContext("2d", { alpha: true });
+  const handleResults = useCallback((results: any) => {
+    const ctx = canvasRef.current?.getContext("2d");
     if (!ctx || !canvasRef.current) return;
     
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    const canvasW = canvasRef.current.width;
+    const canvasH = canvasRef.current.height;
+
+    ctx.clearRect(0, 0, canvasW, canvasH);
     
+    // Draw Active Tracking Zone Guide
+    const marginX = canvasW * 0.15;
+    const marginY = canvasH * 0.15;
+    const boxW = canvasW - (marginX * 2);
+    const boxH = canvasH - (marginY * 2);
+    
+    let isHandInZone = false;
+    let handPos = { x: 0, y: 0 };
+
+    if (results.landmarks && results.landmarks.length > 0) {
+      const hand = results.landmarks[0];
+      handPos = { x: hand[8].x, y: hand[8].y };
+      
+      // Check if index finger (or palm center) is within optimal bounds
+      // Note: x is inverted because we flip the coordinates during draw
+      if (handPos.x >= 0.15 && handPos.x <= 0.85 && 
+          handPos.y >= 0.15 && handPos.y <= 0.85) {
+        isHandInZone = true;
+      }
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(marginX, marginY, boxW, boxH);
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 2;
+    if (isHandInZone) {
+      ctx.strokeStyle = "rgba(16, 185, 129, 0.6)"; // Emerald for optimal location
+      ctx.fillStyle = "rgba(16, 185, 129, 0.05)";
+    } else {
+      ctx.strokeStyle = "rgba(0, 180, 216, 0.3)"; // Blue idle state
+      ctx.fillStyle = "rgba(0, 180, 216, 0.02)";
+    }
+    ctx.fill();
+    ctx.stroke();
+    // Add corner markers
+    ctx.setLineDash([]);
+    const cornerSize = 10;
+    
+    // Top-Left
+    ctx.beginPath();
+    ctx.moveTo(marginX, marginY + cornerSize);
+    ctx.lineTo(marginX, marginY);
+    ctx.lineTo(marginX + cornerSize, marginY);
+    ctx.stroke();
+    // Top-Right
+    ctx.beginPath();
+    ctx.moveTo(marginX + boxW - cornerSize, marginY);
+    ctx.lineTo(marginX + boxW, marginY);
+    ctx.lineTo(marginX + boxW, marginY + cornerSize);
+    ctx.stroke();
+    // Bottom-Left
+    ctx.beginPath();
+    ctx.moveTo(marginX, marginY + boxH - cornerSize);
+    ctx.lineTo(marginX, marginY + boxH);
+    ctx.lineTo(marginX + cornerSize, marginY + boxH);
+    ctx.stroke();
+    // Bottom-Right
+    ctx.beginPath();
+    ctx.moveTo(marginX + boxW, marginY + boxH - cornerSize);
+    ctx.lineTo(marginX + boxW, marginY + boxH);
+    ctx.lineTo(marginX + boxW - cornerSize, marginY + boxH);
+    ctx.stroke();
+    ctx.restore();
+
     if (results.landmarks && results.landmarks.length > 0) {
       const hand = results.landmarks[0];
       const score = results.handedness && results.handedness[0] ? (results.handedness[0][0].score || 0.8) : 0.8;
@@ -109,17 +188,41 @@ export const GestureController: React.FC<GestureControllerProps> = ({
         onGesture(detected);
       }
 
-      // Draw cursor
-      const cx = (1 - pos.x) * canvasRef.current.width;
-      const cy = pos.y * canvasRef.current.height;
-      
-      ctx.beginPath();
-      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-      ctx.fillStyle = "#00b4d8";
-      ctx.fill();
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      // Draw Skeleton Overlay
+      const drawLine = (startIdx: number, endIdx: number) => {
+        const p1 = hand[startIdx];
+        const p2 = hand[endIdx];
+        ctx.beginPath();
+        ctx.moveTo((1 - p1.x) * canvasW, p1.y * canvasH);
+        ctx.lineTo((1 - p2.x) * canvasW, p2.y * canvasH);
+        ctx.strokeStyle = "rgba(0, 180, 216, 0.5)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      };
+
+      const connections = [
+        [0, 1], [1, 2], [2, 3], [3, 4], // thumb
+        [0, 5], [5, 6], [6, 7], [7, 8], // index
+        [5, 9], [9, 10], [10, 11], [11, 12], // middle
+        [9, 13], [13, 14], [14, 15], [15, 16], // ring
+        [13, 17], [17, 18], [18, 19], [19, 20], // pinky
+        [0, 17] // palm bottom
+      ];
+
+      connections.forEach(([start, end]) => drawLine(start, end));
+
+      // Draw landmark dots
+      hand.forEach((lm: any, i: number) => {
+        const x = (1 - lm.x) * canvasW;
+        const y = lm.y * canvasH;
+        ctx.beginPath();
+        ctx.arc(x, y, i === 8 ? 6 : 3, 0, Math.PI * 2);
+        ctx.fillStyle = i === 8 ? "#00b4d8" : "#fef08a";
+        ctx.fill();
+        ctx.strokeStyle = i === 8 ? "white" : "rgba(0,0,0,0.5)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
 
       if (onMove) {
         const moveThreshold = 0.005;
@@ -150,7 +253,7 @@ export const GestureController: React.FC<GestureControllerProps> = ({
       lastHandPos.current = null;
       lastMovePos.current = null;
     }
-  };
+  }, [onHandDetected, onGesture, onMove, onVerticalSwipe, onHorizontalSwipe, sensitivity]);
 
   useEffect(() => {
     let localStream: MediaStream | null = null;
@@ -179,9 +282,9 @@ export const GestureController: React.FC<GestureControllerProps> = ({
           };
         }
       } catch (err: any) {
-        console.error("Camera error:", err);
+        console.warn("Camera check issue:", err);
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          setCameraError("Camera access denied. Please allow in browser settings.");
+          setCameraError("Camera access denied. Please setup in browser settings or open in full window.");
         } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
           setCameraError("No camera found on this device.");
         } else {
@@ -191,22 +294,15 @@ export const GestureController: React.FC<GestureControllerProps> = ({
     }
 
     async function predictLoop() {
-      if (videoRef.current && workerRef.current && workerReady && active) {
-        frameCounter.current++;
-        
-        // Process every 3rd frame and only if worker is not busy
-        if (frameCounter.current % 3 === 0 && !isProcessing.current && videoRef.current.videoWidth > 0) {
+      if (videoRef.current && handLandmarkerRef.current && modelReady && active) {
+        const videoTime = videoRef.current.currentTime;
+        if (videoTime !== lastVideoTime.current && videoRef.current.readyState >= 2) {
+          lastVideoTime.current = videoTime;
           try {
-            isProcessing.current = true;
-            const bitmap = await createImageBitmap(videoRef.current);
-            workerRef.current.postMessage({ 
-              type: 'PROCESS', 
-              imageBitmap: bitmap, 
-              timestamp: performance.now() 
-            }, [bitmap]);
+            const results = handLandmarkerRef.current.detectForVideo(videoRef.current, performance.now());
+            handleResults(results);
           } catch (err) {
-            console.warn("Frame capture failed", err);
-            isProcessing.current = false;
+            console.warn("Frame analysis failed", err);
           }
         }
         animationId = requestAnimationFrame(predictLoop);
@@ -215,7 +311,7 @@ export const GestureController: React.FC<GestureControllerProps> = ({
       }
     }
 
-    if (active) {
+    if (active && modelReady) {
       startCamera();
     } 
 
@@ -227,7 +323,7 @@ export const GestureController: React.FC<GestureControllerProps> = ({
         cancelAnimationFrame(animationId);
       }
     };
-  }, [active, workerReady, onVerticalSwipe, onHorizontalSwipe, onMove, retryTrigger]);
+  }, [active, modelReady, handleResults, retryTrigger]);
 
   const handleRetryCamera = () => {
     setCameraError(null);
@@ -256,20 +352,21 @@ export const GestureController: React.FC<GestureControllerProps> = ({
           ref={videoRef} 
           className="w-full h-full object-cover scale-x-[-1]" 
           muted 
+          autoPlay
           playsInline 
         />
         <canvas 
           ref={canvasRef}
-          width={96}
-          height={72}
+          width={240}
+          height={160}
           className="absolute inset-0 w-full h-full pointer-events-none"
         />
         <div className="absolute top-1 left-1 px-1 bg-[#00b4d8]/80 text-[#0c0e15] text-[6px] font-black rounded uppercase">
-          Gesture On
+          Gesture {modelReady ? "Ready" : "Loading"}
         </div>
-        {lastHandPos.current && (
+        {modelReady && !cameraError && (
           <div className="absolute top-1 right-1 px-1 bg-emerald-500/80 text-[#0c0e15] text-[5px] font-black rounded uppercase animate-pulse">
-            Interactive
+            Active
           </div>
         )}
         {currentGesture && (
@@ -283,3 +380,4 @@ export const GestureController: React.FC<GestureControllerProps> = ({
     </div>
   );
 };
+
