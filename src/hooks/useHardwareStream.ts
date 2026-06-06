@@ -31,58 +31,41 @@ export function useHardwareStream(initialDeviceId: string | null) {
     try {
       setIsScanning(true);
       setError(null);
-      await BleClient.initialize({ androidNeverForLocation: true });
       
-      // Auto-scan for ESP32 devices
       let foundId: string | null = null;
       
-      // Attempt 1: Request LE Scan with Service Filter (Background/Low power friendly)
-      await BleClient.requestLEScan(
-        { 
-          services: [ESP32_SERVICE], 
-          scanMode: ScanMode.SCAN_MODE_LOW_LATENCY 
-        },
-        (result) => {
-          console.log("Device found in scan:", result.device.name, result.device.deviceId);
-          // If we find something that matches our service, or has a matching name, we grab it
-          if (result.device.name?.includes("ESP32") || result.device.name?.includes("Holo") || result.localName?.includes("ESP32")) {
-            foundId = result.device.deviceId;
-            BleClient.stopLEScan().catch(() => {});
-          }
+      // Directly request device. This handles both Web (shows browser native dialog) 
+      // and Capacitor (shows native OS dialog). Avoids user-gesture timeouts.
+      try {
+        const device = await BleClient.requestDevice({
+          services: [ESP32_SERVICE],
+          optionalServices: [ESP32_SERVICE]
+        });
+        if (device) {
+          foundId = device.deviceId;
         }
-      );
-
-      // Wait for scan results
-      let scanWaitTime = 0;
-      while (!foundId && scanWaitTime < 40) { // 4 seconds
-        await new Promise(r => setTimeout(r, 100));
-        scanWaitTime++;
-      }
-      
-      await BleClient.stopLEScan().catch(() => {});
-
-      // Attempt 2: If nothing found, try a more direct request (shows system dialog)
-      if (!foundId) {
+      } catch (e: any) {
+        // If filtering by service fails, try accepting all devices (fallback for some Androids)
         try {
-          const device = await BleClient.requestDevice({
-            services: [ESP32_SERVICE],
-            optionalServices: []
-          });
-          if (device) {
-            foundId = device.deviceId;
-          }
-        } catch (e) {
-          console.warn("requestDevice cancelled or failed:", e);
+           const fallbackDevice = await BleClient.requestDevice();
+           if (fallbackDevice) {
+             foundId = fallbackDevice.deviceId;
+           }
+        } catch (errFallback) {
+           console.warn("requestDevice fallback failed:", errFallback);
+           throw new Error("Device selection cancelled or failed.");
         }
       }
 
       if (foundId) {
         setDeviceId(foundId);
       } else {
-        throw new Error("ESP32 hardware not found via scan.");
+        throw new Error("ESP32 hardware not selected.");
       }
     } catch (err: any) {
       setError(err.message || "Discovery failed");
+      // Throw the error so the UI can show a toast
+      throw err;
     } finally {
       setIsScanning(false);
     }

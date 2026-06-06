@@ -235,10 +235,22 @@ RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
             return RgbColor(component, 255 - component, 128);
         }
         case EFFECT_FIRE: {
-            float noise = sin(r * 15.0f - (float)timeMs * 0.008f) * 0.5f + 0.5f;
-            if (r < noise) {
-                if (r < 0.3f) return RgbColor(255, 255, 100);
-                return RgbColor(180, 0, 0);
+            float phase1 = r * 15.0f - angle * DEG_TO_RAD * 3.0f - (float)timeMs * 0.004f;
+            float phase2 = r * 25.0f + angle * DEG_TO_RAD * 7.0f - (float)timeMs * 0.007f;
+            float phase3 = r * 8.0f - (float)timeMs * 0.01f;
+            float noise = (sin(phase1) + sin(phase2) + sin(phase3)) * 0.166f + 0.5f;
+            
+            float fireVal = (1.0f - r) * 1.5f * noise;
+            
+            if (fireVal > 0.8f) {
+                int b = (int)((fireVal - 0.8f) * 5.0f * 255.0f);
+                return RgbColor(255, 255, b > 255 ? 255 : b);
+            } else if (fireVal > 0.4f) {
+                int g = (int)((fireVal - 0.4f) * 2.5f * 255.0f);
+                return RgbColor(255, g > 255 ? 255 : g, 0);
+            } else if (fireVal > 0.15f) {
+                int r_col = (int)((fireVal - 0.15f) * 4.0f * 255.0f);
+                return RgbColor(r_col > 255 ? 255 : r_col, 0, 0);
             }
             return RgbColor(0, 0, 0);
         }

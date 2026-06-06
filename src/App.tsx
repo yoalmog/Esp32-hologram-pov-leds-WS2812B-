@@ -1394,14 +1394,22 @@ export default function App() {
 
     try {
       // Real diagnostic API call to ESP32
-      const isLocalHost = window.location.hostname === "192.168.4.1";
-      const targetUrl = (state.wifi.mode === "AP" && isLocalHost) ? "http://192.168.4.1/diagnostic" : "/diagnostic";
+      const isCapacitor = !!(window as any).Capacitor;
+      const baseUrl = (state.wifi.mode === "AP" || isCapacitor) ? "http://192.168.4.1" : "";
+      const targetUrl = `${baseUrl}/api/status`;
       const res = await fetch(targetUrl, { signal: diagnosticAbortControllerRef.current.signal });
       clearTimeout(timeoutId);
       if (!res.ok) throw new Error("Diagnostics API failed");
       const data = await res.json();
       setDiagnosticProgress(100);
-      setDiagnosticsResult(data);
+      setDiagnosticsResult({
+          status: data.state || data.status || "Unknown",
+          rpm: data.speed || data.rpm || 0,
+          fps: data.measuredFps || 0,
+          leds: data.numLeds || 0,
+          wifi: data.wifiSSID || "Not connected",
+          free_space: data.freeSpace ? `${Math.round(data.freeSpace / 1024)} KB` : "N/A"
+      });
       setIsRunningDiagnostics(false);
     } catch (err: any) {
       clearTimeout(timeoutId);
@@ -1445,6 +1453,13 @@ export default function App() {
   const [staSSID, setStaSSID] = useState("");
   const [staPass, setStaPass] = useState("");
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+
+  useEffect(() => {
+    // Pre-initialize BleClient so it doesn't break user gesture when clicking connect
+    BleClient.initialize().catch(e => {
+        console.warn("BleClient early initialization failed", e);
+    });
+  }, []);
 
   const handleScan = async () => {
     setIsScanning(true);
@@ -2672,7 +2687,8 @@ export default function App() {
           </div>
 
           <div className="flex justify-between items-center px-1 mb-2 mt-2">
-            <span className="text-[13px] text-slate-200 tracking-wide">
+            <span className="text-[13px] text-slate-200 tracking-wide flex items-center gap-2">
+              <RefreshCw className={`w-3.5 h-3.5 text-[#00b4d8] ${isConnected || isBluetoothConnected ? "animate-[spin_3s_linear_infinite]" : "opacity-50"}`} />
               Sync Quality
             </span>
             <div className="flex items-center gap-3">
@@ -3035,10 +3051,22 @@ RgbColor getEffectColorRaw(int ledIdx, float angle, unsigned long timeMs) {
             return RgbColor(255, 0, 0); // Logic below handles this as a placeholder
         }
         case EFFECT_FIRE: {
-            float noise = sin(r * 15.0f - (float)timeMs * 0.008f) * 0.5f + 0.5f;
-            if (r < noise) {
-                if (r < 0.3f) return RgbColor(255, 255, 100);
-                return RgbColor(180, 0, 0);
+            float phase1 = r * 15.0f - angle * DEG_TO_RAD * 3.0f - (float)timeMs * 0.004f;
+            float phase2 = r * 25.0f + angle * DEG_TO_RAD * 7.0f - (float)timeMs * 0.007f;
+            float phase3 = r * 8.0f - (float)timeMs * 0.01f;
+            float noise = (sin(phase1) + sin(phase2) + sin(phase3)) * 0.166f + 0.5f;
+            
+            float fireVal = (1.0f - r) * 1.5f * noise;
+            
+            if (fireVal > 0.8f) {
+                int b = (int)((fireVal - 0.8f) * 5.0f * 255.0f);
+                return RgbColor(255, 255, b > 255 ? 255 : b);
+            } else if (fireVal > 0.4f) {
+                int g = (int)((fireVal - 0.4f) * 2.5f * 255.0f);
+                return RgbColor(255, g > 255 ? 255 : g, 0);
+            } else if (fireVal > 0.15f) {
+                int r_col = (int)((fireVal - 0.15f) * 4.0f * 255.0f);
+                return RgbColor(r_col > 255 ? 255 : r_col, 0, 0);
             }
             return RgbColor(0, 0, 0);
         }

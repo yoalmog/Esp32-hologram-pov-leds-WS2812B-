@@ -56,6 +56,29 @@ async function startServer() {
     res.json({ rpm: mockRpm, status: mockStatus });
   });
 
+  app.get("/api/status", (req, res) => {
+    res.json({
+      state: mockStatus,
+      image: "current_animation.bmp",
+      column: 12,
+      totalColumns: 64,
+      speed: mockRpm,
+      measuredFps: 30,
+      brightness: 128,
+      loopMode: true,
+      orientation: "vertical",
+      direction: "left_to_right",
+      ledType: "WS2812",
+      numLeds: 64,
+      effectRunning: false,
+      effectType: 0,
+      wifiConnected: true,
+      wifiSSID: "HoloSpin_Network",
+      wifiIP: "192.168.1.50",
+      freeSpace: 2048000
+    });
+  });
+
   app.post("/calibrate", (req, res) => {
     mockStatus = "calibrating";
     mockRpm = 240;
