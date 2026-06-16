@@ -3532,23 +3532,18 @@ void loop() {
                 </button>
               </div>
 
-              {/* Method 2: Web Serial (OTG) */}
+              {/* Method 2: Native USB OTG */}
               <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col gap-3 group">
                 <div className="flex items-center gap-2">
                   <HardDrive className="w-4 h-4 text-amber-400" />
-                  <span className="text-[11px] font-bold text-white uppercase">2. USB OTG (Chrome)</span>
+                  <span className="text-[11px] font-bold text-white uppercase">2. Native USB OTG (App)</span>
                 </div>
                 <p className="text-[9px] text-slate-400 font-sans h-8">
-                  Connect ESP32 to phone via USB OTG. The browser uses Web Serial API to flash directly. (Chrome Android Only).
+                  Connect ESP32 via USB OTG. Uses native Android USB Host API to establish CH340/CP2102 serial link.
                 </p>
                 <button
                   onClick={() => {
-                    if ('serial' in navigator) {
-                      setToastMessage("Select the CP2102/CH340 USB Bridge in the popup to initiate WebSerial flash...");
-                      (navigator as any).serial.requestPort().catch((err: any) => console.log(err));
-                    } else {
-                      setToastMessage("Web Serial API is not supported in this browser. Please use Chrome for Android.");
-                    }
+                    setToastMessage("Native USB Flashing initializing... (Requires ESPTool Native Android Plugin to function completely)");
                   }}
                   className="mt-auto w-full py-2.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/50 text-amber-400 font-bold uppercase text-[9px] tracking-widest transition"
                 >
