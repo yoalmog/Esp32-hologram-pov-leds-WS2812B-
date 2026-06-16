@@ -78,3 +78,33 @@ body {
   margin: 0;
   padding: 0;
 }
+
+@keyframes firePulseIcon {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px rgba(249, 115, 22, 0.4)) brightness(1);
+  }
+  50% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.85)) brightness(1.2);
+  }
+}
+
+@keyframes fireGlowPreview {
+  0%, 100% {
+    box-shadow: 0 0 30px rgba(249, 115, 22, 0.35);
+    border-color: rgba(249, 115, 22, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 65px rgba(249, 115, 22, 0.7);
+    border-color: rgba(254, 215, 170, 0.8);
+  }
+}
+
+.animate-fire-pulse-icon {
+  animation: firePulseIcon 1.5s ease-in-out infinite;
+}
+
+.animate-fire-glow-preview {
+  animation: fireGlowPreview 2s ease-in-out infinite;
+}

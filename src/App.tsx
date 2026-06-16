@@ -766,6 +766,33 @@ export default function App() {
   };
 
   const [activeTab, setActiveTab] = useState("controller");
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstallable(false);
+      setDeferredPrompt(null);
+    }
+  };
+
   const [calibrationConfig, setCalibrationConfig] = useState(() => {
     const saved = safeGetLocal("holospin_calibrationConfig");
     if (saved) {
@@ -829,6 +856,10 @@ export default function App() {
   const [brightness, setBrightness] = useState(() => {
     const val = Number(safeGetLocal("holospin_brightness") || "150");
     return isNaN(val) ? 150 : val;
+  });
+  const [flameIntensity, setFlameIntensity] = useState<number>(() => {
+    const val = Number(safeGetLocal("holospin_flameIntensity") || "128");
+    return isNaN(val) ? 128 : val;
   });
   useEffect(() => {
     setLogoTintColor(`hsl(${hue}, 100%, 50%)`);
@@ -1179,6 +1210,14 @@ export default function App() {
       sendCommand(`${r},${g},${b}`);
     }
   }, [logoTintColor, colorMode, bleIsConnected, sendCommand]);
+
+  // Handle Flame Intensity transmission
+  useEffect(() => {
+    safeSaveLocal("holospin_flameIntensity", flameIntensity.toString());
+    if (activeEffect === "fire" && bleIsConnected && sendCommand) {
+      sendCommand("FLAME_INTENSITY:" + flameIntensity);
+    }
+  }, [flameIntensity, activeEffect, bleIsConnected, sendCommand]);
 
   const [isRetrying, setIsRetrying] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -2101,7 +2140,7 @@ export default function App() {
   const renderContent = () => {
     if (subPage === "wifi") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-10px]">
             WIFI SETTINGS
           </h3>
@@ -2206,7 +2245,7 @@ export default function App() {
 
     if (subPage === "calibration") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <div className="flex flex-col gap-1">
             <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-4px]">
               SENSOR CALIBRATION / כיול חיישן
@@ -2301,7 +2340,7 @@ export default function App() {
 
     if (subPage === "led") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-10px]">
             LED SETTINGS
           </h3>
@@ -2423,7 +2462,7 @@ export default function App() {
 
     if (subPage === "motor") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-10px]">
             MOTOR SETTINGS
           </h3>
@@ -2537,7 +2576,7 @@ export default function App() {
 
     if (subPage === "pov") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-10px]">
             POV SETTINGS
           </h3>
@@ -2632,7 +2671,7 @@ export default function App() {
 
     if (subPage === "sync") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-10px]">
             SYNC & SENSOR
           </h3>
@@ -2725,7 +2764,7 @@ export default function App() {
 
       if (missingFields.length > 0) {
         return (
-          <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
             <div className="flex justify-between items-center">
               <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-0">
                 FIRMWARE SETUP
@@ -3393,7 +3432,7 @@ void loop() {
       };
 
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <div className="flex justify-between items-center">
             <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-0">
               FIRMWARE SETUP
@@ -3462,18 +3501,61 @@ void loop() {
             </div>
           </div>
 
-          <div className="border border-slate-800/80 rounded-2xl bg-[#0c0e15] p-4 flex flex-col gap-2">
+          {/* Firmware Flashing Section */}
+          <div className="border border-slate-800/80 rounded-2xl bg-[#0c0e15] p-5 flex flex-col gap-4">
             <h4 className="text-white font-bold text-sm flex items-center gap-2">
-              <Upload className="w-4 h-4 text-emerald-400" />
-              OTA Update (Over-The-Air)
+              <Upload className="w-5 h-5 text-emerald-400" />
+              Firmware Flashing (No Computer Required)
             </h4>
-            <p className="text-xs text-slate-400">Update firmware wirelessly via ElegantOTA. Ensure the device is connected to the same network.</p>
-            <button
-              onClick={() => window.open(state.wifi.mode === "AP" ? "http://192.168.4.1/update" : "/update", '_blank')}
-              className="mt-2 w-full py-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-400 font-bold uppercase text-[10px] tracking-widest transition"
-            >
-              Open OTA Manager 
-            </button>
+            
+            <p className="text-[10px] text-slate-400 leading-relaxed font-sans mb-1">
+              Just like <strong className="text-emerald-400">ArduinoDroid</strong>, you can flash your ESP32 directly from your phone. 
+              Android phones support direct flashing via a USB OTG cable using the browser's Web Serial API, 
+              or you can flash completely wirelessly via Wi-Fi OTA.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Method 1: OTA */}
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col gap-3 group">
+                <div className="flex items-center gap-2">
+                  <Wifi className="w-4 h-4 text-emerald-400" />
+                  <span className="text-[11px] font-bold text-white uppercase">1. Wi-Fi OTA (Wireless)</span>
+                </div>
+                <p className="text-[9px] text-slate-400 font-sans h-8">
+                  Update firmware wirelessly via ElegantOTA. Ensure your phone is connected to the Holospin Wi-Fi. (iOS & Android)
+                </p>
+                <button
+                  onClick={() => window.open(state.wifi.mode === "AP" ? "http://192.168.4.1/update" : "/update", '_blank')}
+                  className="mt-auto w-full py-2.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-400 font-bold uppercase text-[9px] tracking-widest transition"
+                >
+                  Open OTA Flasher
+                </button>
+              </div>
+
+              {/* Method 2: Web Serial (OTG) */}
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col gap-3 group">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="w-4 h-4 text-amber-400" />
+                  <span className="text-[11px] font-bold text-white uppercase">2. USB OTG (Chrome)</span>
+                </div>
+                <p className="text-[9px] text-slate-400 font-sans h-8">
+                  Connect ESP32 to phone via USB OTG. The browser uses Web Serial API to flash directly. (Chrome Android Only).
+                </p>
+                <button
+                  onClick={() => {
+                    if ('serial' in navigator) {
+                      setToastMessage("Select the CP2102/CH340 USB Bridge in the popup to initiate WebSerial flash...");
+                      (navigator as any).serial.requestPort().catch((err: any) => console.log(err));
+                    } else {
+                      setToastMessage("Web Serial API is not supported in this browser. Please use Chrome for Android.");
+                    }
+                  }}
+                  className="mt-auto w-full py-2.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/50 text-amber-400 font-bold uppercase text-[9px] tracking-widest transition"
+                >
+                  Flash via USB OTG
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="border border-slate-800/80 rounded-2xl bg-[#0c0e15] p-4 flex flex-col gap-2">
@@ -3522,6 +3604,7 @@ void loop() {
                   <li><span className="text-white font-mono">NeoPixelBus</span> (by Makuna) — לנהיגת הלדים המהירה DMA/RMT</li>
                   <li><span className="text-white font-mono">ElegantOTA</span> — לעדכונים אלחוטיים באמצעות רשת Wi-Fi</li>
                   <li><span className="text-white font-mono">ESPAsyncWebServer</span> & <span className="text-white font-mono">AsyncTCP</span> — לשרת אינטרנט מהיר ואי-סינכרוני</li>
+                  <li><span className="text-white font-mono">NimBLE-Arduino</span> (by h2zero) — לתקשורת Bluetooth חסכונית ומהירה</li>
                 </ul>
               </div>
 
@@ -3582,7 +3665,7 @@ void loop() {
 
     if (subPage === "power") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-10px]">
             POWER SETTINGS
           </h3>
@@ -3670,7 +3753,7 @@ void loop() {
       ];
 
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 font-sans">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6  font-sans">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div className="flex flex-col">
@@ -3857,7 +3940,7 @@ void loop() {
 
     if (subPage === "advanced") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-10px]">
             ADVANCED SETTINGS
           </h3>
@@ -3941,7 +4024,7 @@ void loop() {
 
     if (subPage === "bluetooth") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <div className="flex flex-col gap-1">
             <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase">
               BLUETOOTH CONNECTIVITY / קישוריות בלוטוס
@@ -4020,7 +4103,7 @@ void loop() {
       });
 
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 font-sans text-right" dir="rtl">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6  font-sans text-right" dir="rtl">
           <div className="flex flex-col gap-1 text-left" dir="ltr">
             <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase text-right">
               SD CARD STORAGE & FOLDERS / כרטיס זיכרון ותיקיות
@@ -4342,7 +4425,7 @@ void loop() {
       const hasChanges = pendingMapping !== null;
 
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
            <div className="flex flex-col gap-1">
               <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase">
                 Gesture Mapping Config / פקודות מחוות
@@ -4517,7 +4600,7 @@ void loop() {
 
     if (subPage === "schedule") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
            <div className="flex flex-col gap-1">
               <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase">
                 Operation Scheduler / זמני פעילות
@@ -4623,7 +4706,7 @@ void loop() {
 
     if (subPage === "background") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-[-10px]">
             BACKGROUND STYLE
           </h3>
@@ -4740,7 +4823,7 @@ void loop() {
 
     if (subPage === "media") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <div className="flex flex-col gap-1">
             <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase">
               MEDIA & FILES UPLOADS / העלאת קבצים ומדיה
@@ -4975,7 +5058,7 @@ void loop() {
 
     if (activeTab === "devices") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-1 text-center font-black">
             CONNECTED DEVICES / מכשירים מחוברים
           </h3>
@@ -5035,7 +5118,7 @@ void loop() {
 
     if (activeTab === "library") {
       return (
-        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="px-5 pt-2 pb-28 flex flex-col gap-6 ">
           <h3 className="text-[11px] text-slate-400 font-bold tracking-widest uppercase mb-1 text-center font-black">
             MEDIA LIBRARY / ספריית קבצים
           </h3>
@@ -5071,7 +5154,7 @@ void loop() {
 
     if (activeTab === "controller") {
         return (
-          <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 ">
             {/* Sync Progress Bar */}
             {syncProgress !== null && (
               <div className="w-full max-w-3xl mx-auto -mb-4 pt-4">
@@ -5110,7 +5193,11 @@ void loop() {
             <div className="w-full max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-center my-8">
               <div className="flex justify-center items-center w-full max-w-[280px] aspect-square mx-auto relative">
                 <motion.div
-                  className="w-full h-full rounded-full border-[2px] border-slate-800 bg-[#050608] flex items-center justify-center overflow-hidden relative shadow-[0_0_50px_rgba(34,180,216,0.2)]"
+                  className={`w-full h-full rounded-full border-[2px] bg-[#050608] flex items-center justify-center overflow-hidden relative transition-all duration-500 ${
+                    activeEffect === "fire" 
+                      ? "border-[#f97316] shadow-[0_0_50px_rgba(249,115,22,0.4)] animate-fire-glow-preview" 
+                      : "border-slate-800 shadow-[0_0_50px_rgba(34,180,216,0.2)]"
+                  }`}
                   animate={isApplyingPreset ? { scale: [1, 1.08, 1], rotate: [0, 5, -5, 0], filter: ['brightness(1)', 'brightness(1.8)', 'brightness(1)'] } : { scale: 1, rotate: 0 }}
                   transition={{ duration: 0.8, ease: "easeInOut" }}
                 >
@@ -5132,6 +5219,7 @@ void loop() {
                     kaleidoShape={kaleidoShape}
                     kaleidoLines={kaleidoLines}
                     kaleidoMorphSpeed={kaleidoMorphSpeed}
+                    flameIntensity={flameIntensity}
                   />
                   <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent rounded-full pointer-events-none"></div>
                   <div className="absolute inset-0 shadow-[inset_0_0_80px_rgba(0,0,0,0.8)] pointer-events-none rounded-full"></div>
@@ -5142,6 +5230,41 @@ void loop() {
                 <Gauge value={rpm} min={0} max={2000} label="RPM" unit=" RPM" colorClass="text-[#00b4d8]" />
               </div>
             </div>
+
+            {activeEffect === "fire" && (
+              <motion.div 
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full max-w-3xl mx-auto border border-orange-500/30 bg-orange-950/10 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden shadow-[0_0_20px_rgba(249,115,22,0.1)] -mt-2 mb-4"
+              >
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500" />
+                <div className="flex justify-between items-center mb-4 px-1">
+                  <div className="flex items-center gap-2">
+                    <Flame className="w-5 h-5 text-[#f97316] animate-pulse" />
+                    <span className="text-[11px] font-black tracking-widest text-[#f97316] uppercase">Fire Effect Controls / בקרת אפקט אש</span>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-orange-400">{Math.round((flameIntensity / 255) * 100)}%</span>
+                </div>
+                
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Flame Intensity (Burn Rate)</span>
+                    <span className="text-[11px] font-mono text-orange-400">{flameIntensity} / 255</span>
+                  </div>
+                  <CustomSlider 
+                    value={flameIntensity} 
+                    onChange={(val: number) => setFlameIntensity(val)} 
+                    min={0}
+                    max={255}
+                    thumbColor="#f97316" 
+                    trackColor="#1e110a" 
+                  />
+                  <p className="text-[9px] text-slate-400 font-medium uppercase tracking-tighter mt-1">
+                    Adjusts the rate of thermal combustion, flame propagation speed, and rising pixel heat layers.
+                  </p>
+                </div>
+              </motion.div>
+            )}
 
             <div className="flex justify-center -mt-4 mb-4">
               <button
@@ -5186,7 +5309,7 @@ void loop() {
 
       if (activeTab === "effects") {
         return (
-          <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2 flex flex-col gap-6 ">
             
             {/* Color Mode Selection */}
             <section className="mt-2 text-center">
@@ -5220,11 +5343,13 @@ void loop() {
                   <button
                     key={eff.id}
                     onClick={() => handleSelectEffect(eff.id)}
-                    className={`flex flex-col items-center justify-center py-3 px-1 rounded-2xl border transition-all ${
+                    className={`flex flex-col items-center justify-center py-3 px-1 rounded-2xl border transition-all duration-300 ${
                       activeEffect === eff.id
-                        ? "border-[#00b4d8] bg-[#00b4d8]/10 shadow-[0_0_15px_rgba(0,180,216,0.2)] scale-[1.02]"
+                        ? (eff.id === "fire"
+                            ? "border-[#f97316] bg-[#f97316]/10 shadow-[0_0_15px_rgba(249,115,22,0.25)] scale-[1.02]"
+                            : "border-[#00b4d8] bg-[#00b4d8]/10 shadow-[0_0_15px_rgba(0,180,216,0.2)] scale-[1.02]")
                         : "border-transparent bg-slate-900/40 hover:bg-slate-800/50"
-                    }`}
+                    } ${eff.id === "fire" && activeEffect === "fire" ? "animate-fire-pulse-icon" : ""}`}
                   >
                     <div className="mb-2 h-7 w-7 flex items-center justify-center">
                       {eff.icon(eff.color)}
@@ -5340,7 +5465,7 @@ void loop() {
 
       if (activeTab === "settings") {
         return (
-          <div className="px-5 pt-2 pb-28 flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4">
+          <div className="px-5 pt-2 pb-28 flex flex-col gap-5 ">
             <h3 className="text-[11px] text-slate-400 font-bold tracking-widest mb-1 uppercase pl-1 text-center font-black">
               SYSTEM CONFIG / הגדרות מערכת
             </h3>
@@ -5469,6 +5594,28 @@ void loop() {
         `}</style>
       )}
 
+      <AnimatePresence>
+        {isInstallable && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-2 left-1/2 -translate-x-1/2 w-[95%] max-w-[400px] z-[9999] bg-gradient-to-r from-blue-600 to-[#00b4d8] rounded-xl p-3 shadow-[0_0_20px_rgba(0,180,216,0.4)] flex items-center justify-between"
+          >
+            <div className="flex flex-col">
+              <span className="text-white font-bold text-xs uppercase tracking-wider">Install HoloSpin App</span>
+              <span className="text-blue-100 text-[10px] font-sans">Get the native app experience offline.</span>
+            </div>
+            <button 
+              onClick={handleInstallClick}
+              className="bg-white/20 hover:bg-white/30 text-white border border-white/30 active:scale-95 transition-all text-[10px] font-bold px-4 py-2 rounded-lg"
+            >
+              INSTALL
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {toastMessage && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[90%] max-w-[350px] z-[1000] bg-[#0c0e15]/95 border border-[#22c55e]/50 text-[#22c55e] px-4 py-3 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.35)] text-xs font-bold tracking-wider uppercase animate-in fade-in slide-in-from-bottom-5 duration-300 flex items-start gap-3">
           <CheckCircle2 className="w-4 h-4 text-[#22c55e] shrink-0 mt-0.5" />
@@ -5476,9 +5623,20 @@ void loop() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto w-full no-scrollbar relative z-10">
-        {renderHeader()}
-        {renderContent()}
+      <div className="flex-1 overflow-y-auto w-full no-scrollbar relative z-10 flex flex-col">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={subPage || activeTab}
+            initial={{ opacity: 0, x: 25 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -25 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-col w-full min-h-max"
+          >
+            {renderHeader()}
+            {renderContent()}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md border-t border-slate-800/80 bg-[#090a10]/95 backdrop-blur-lg flex justify-between items-center px-10 py-3 pb-6 z-50">

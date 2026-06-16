@@ -74,6 +74,8 @@ enum EffectType {
 };
 EffectType currentEffect = EFFECT_RAINBOW;
 
+uint8_t flameIntensity = 128; // Dynamic flame speed/intensity parameter
+
 volatile unsigned long lastHallTrigger = 0;
 volatile unsigned long revolutionTime = 40000;
 
@@ -235,12 +237,13 @@ RgbColor getEffectColor(int ledIdx, float angle, unsigned long timeMs) {
             return RgbColor(component, 255 - component, 128);
         }
         case EFFECT_FIRE: {
-            float phase1 = r * 15.0f - angle * DEG_TO_RAD * 3.0f - (float)timeMs * 0.004f;
-            float phase2 = r * 25.0f + angle * DEG_TO_RAD * 7.0f - (float)timeMs * 0.007f;
-            float phase3 = r * 8.0f - (float)timeMs * 0.01f;
+            float speedFactor = (float)flameIntensity / 128.0f;
+            float phase1 = r * 15.0f - angle * DEG_TO_RAD * 3.0f - (float)timeMs * 0.004f * speedFactor;
+            float phase2 = r * 25.0f + angle * DEG_TO_RAD * 7.0f - (float)timeMs * 0.007f * speedFactor;
+            float phase3 = r * 8.0f - (float)timeMs * 0.01f * speedFactor;
             float noise = (sin(phase1) + sin(phase2) + sin(phase3)) * 0.166f + 0.5f;
             
-            float fireVal = (1.0f - r) * 1.5f * noise;
+            float fireVal = (1.0f - r) * 1.5f * noise * (0.6f + speedFactor * 0.4f);
             
             if (fireVal > 0.8f) {
                 int b = (int)((fireVal - 0.8f) * 5.0f * 255.0f);
@@ -392,6 +395,16 @@ void processIncomingCommand(String cmd) {
 
     if (upperValue == "ON") ledState = true;
     else if (upperValue == "OFF") ledState = false;
+    else if (upperValue.startsWith("FLAME_INTENSITY:")) {
+        int index = cmd.indexOf(':');
+        if (index != -1) {
+            String valStr = cmd.substring(index + 1);
+            valStr.trim();
+            flameIntensity = (uint8_t)valStr.toInt();
+            Serial.print("[COMMAND] Set Flame Intensity directly to: ");
+            Serial.println(flameIntensity);
+        }
+    }
     else if (upperValue.startsWith("EFFECT:") || setEffectByName(cmd)) {
         if (upperValue.startsWith("EFFECT:")) setEffectByName(cmd.substring(7));
     } else {

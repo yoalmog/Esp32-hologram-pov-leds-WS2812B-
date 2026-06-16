@@ -19,7 +19,17 @@ export default defineConfig(() => {
           short_name: 'Holospin',
           description: 'Holospin Controller UI',
           theme_color: '#050608',
-          icons: []
+          background_color: '#050608',
+          display: 'standalone',
+          orientation: 'portrait',
+          icons: [
+            {
+              src: 'icon.svg',
+              sizes: '192x192 512x512',
+              type: 'image/svg+xml',
+              purpose: 'any maskable'
+            }
+          ]
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}']

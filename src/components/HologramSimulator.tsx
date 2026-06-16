@@ -19,6 +19,7 @@ interface HologramSimulatorProps {
   kaleidoLines?: string;
   kaleidoMorphSpeed?: number;
   rainbowMode?: boolean;
+  flameIntensity?: number;
 }
 
 export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
@@ -40,6 +41,7 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
   kaleidoLines = 'hybrid',
   kaleidoMorphSpeed = 1.0,
   rainbowMode = false,
+  flameIntensity = 128,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -343,9 +345,12 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
           c.save();
           c.globalCompositeOperation = 'screen'; // Creates beautiful hot overlapping color additive blending
           
+          // Speed and intensity multiplier based on flameIntensity prop
+          const speedMultiplier = flameIntensity / 128.0;
+
           // Shifting fire base hue parameter for diverse color shifts
-          const fireHueBase = (t * 0.04) % 360;
-          const fireShapeShift = Math.sin(t * 0.001) * 0.5 + 0.5; // Morphs the bezier flame contours
+          const fireHueBase = (t * 0.04 * speedMultiplier) % 360;
+          const fireShapeShift = Math.sin(t * 0.001 * speedMultiplier) * 0.5 + 0.5; // Morphs the bezier flame contours
 
           // Background soft ambient heat flare glow
           const ambientGlow = c.createRadialGradient(0, radius * 0.4, 0, 0, radius * 0.4, radius * 1.1);
@@ -359,14 +364,14 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
 
           // 1. Core Heatbed (White-hot Ellipse at base)
           const coreY = radius * 0.65;
-          const coreGrad = c.createRadialGradient(0, coreY, 0, 0, coreY, radius * 0.35 * effectScale);
+          const coreGrad = c.createRadialGradient(0, coreY, 0, 0, coreY, radius * 0.35 * effectScale * (0.8 + speedMultiplier * 0.2));
           coreGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)'); // hyper-hot white
           coreGrad.addColorStop(0.25, `hsla(${(fireHueBase + 35) % 360}, 100%, 75%, 0.9)`); 
           coreGrad.addColorStop(0.65, `hsla(${fireHueBase}, 100%, 50%, 0.55)`); 
           coreGrad.addColorStop(1.0, `hsla(${fireHueBase}, 100%, 40%, 0)`);
           c.fillStyle = coreGrad;
           c.beginPath();
-          c.ellipse(0, coreY, radius * 0.48 * effectScale, radius * 0.18 * effectScale, 0, 0, Math.PI * 2);
+          c.ellipse(0, coreY, radius * 0.48 * effectScale * (0.85 + speedMultiplier * 0.15), radius * 0.18 * effectScale * (0.8 + speedMultiplier * 0.2), 0, 0, Math.PI * 2);
           c.fill();
 
           // 2. Overlapping Flame Langues / Tongues (Flickering and swaying with multiple wave harmonics)
@@ -375,20 +380,20 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
               const phase = i * (Math.PI * 2 / numTongues);
               // Distribute tongue anchors horizontally along the bottom burning base
               const startX = -radius * 0.45 + (i / (numTongues - 1)) * radius * 0.9;
-              const startY = radius * 0.68 + Math.sin(phase * 3 + t * 0.005) * 5;
+              const startY = radius * 0.68 + Math.sin(phase * 3 + t * 0.005 * speedMultiplier) * 5;
               
               // Dynamic height containing primary frequency + high frequency turbulence (air flickering)
-              const baseHeight = radius * (0.7 + 0.4 * Math.sin(t * 0.003 + phase * 2.3)) * effectScale;
-              const turbulentFlicker = 1.0 + Math.sin(t * 0.02 + phase * 7) * 0.12; 
+              const baseHeight = radius * (0.7 + 0.4 * Math.sin(t * 0.003 * speedMultiplier + phase * 2.3)) * effectScale * (0.7 + speedMultiplier * 0.3);
+              const turbulentFlicker = 1.0 + Math.sin(t * 0.02 * speedMultiplier + phase * 7) * 0.12; 
               const tongueHeight = baseHeight * turbulentFlicker;
 
               // Left-right wave thermal sway
-              const swayAmt = Math.sin(t * 0.0022 + phase * 3.7) * (radius * 0.22);
+              const swayAmt = Math.sin(t * 0.0022 * speedMultiplier + phase * 3.7) * (radius * 0.22);
               const peakX = startX + swayAmt;
               const peakY = startY - tongueHeight;
 
               // Distinct dynamic width per flame
-              const tongueWidth = radius * 0.16 * (0.6 + 0.4 * Math.cos(t * 0.0016 + phase)) * effectScale;
+              const tongueWidth = radius * 0.16 * (0.6 + 0.4 * Math.cos(t * 0.0016 * speedMultiplier + phase)) * effectScale * (0.8 + speedMultiplier * 0.2);
 
               // Linear heat-map gradient mapped onto the specific flame height
               const tongueGrad = c.createLinearGradient(startX, startY, peakX, peakY);
@@ -405,14 +410,14 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
 
               // Draw curves up to the flickering peak and back down, with shape morphing parameters
               const skewYMod = i % 2 === 0 ? 1.1 : 0.9;
-              const ctrlX1 = startX - tongueWidth * (1.0 - fireShapeShift * 0.2) + Math.sin(t * 0.003 + phase) * 12;
+              const ctrlX1 = startX - tongueWidth * (1.0 - fireShapeShift * 0.2) + Math.sin(t * 0.003 * speedMultiplier + phase) * 12;
               const ctrlY1 = startY - tongueHeight * 0.4 * skewYMod;
               const ctrlX2 = peakX - tongueWidth * (0.15 + fireShapeShift * 0.15);
               const ctrlY2 = startY - tongueHeight * 0.75;
               
               const ctrlX3 = peakX + tongueWidth * (0.15 + fireShapeShift * 0.15);
               const ctrlY3 = startY - tongueHeight * 0.75;
-              const ctrlX4 = startX + tongueWidth * (1.0 - fireShapeShift * 0.2) + Math.sin(t * 0.003 + phase) * 12;
+              const ctrlX4 = startX + tongueWidth * (1.0 - fireShapeShift * 0.2) + Math.sin(t * 0.003 * speedMultiplier + phase) * 12;
               const ctrlY4 = startY - tongueHeight * 0.4 * skewYMod;
 
               c.bezierCurveTo(ctrlX1, ctrlY1, ctrlX2, ctrlY2, peakX, peakY);
@@ -422,7 +427,7 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
           }
 
           // 3. Thermal Floating Embers (Upward drifting high-velocity sparks/particles)
-          const numParticles = 25;
+          const numParticles = Math.min(40, Math.floor(15 + speedMultiplier * 15));
           for (let p = 0; p < numParticles; p++) {
               // Deterministic seed values keyed per particle to maintain consistent individual physical paths
               const seed_SpeedScale = Math.sin(p * 415.7) * 0.5 + 0.5;
@@ -431,20 +436,20 @@ export const HologramSimulator: React.FC<HologramSimulatorProps> = ({
 
               // Calculate looping linear progress [0.0 - 1.0] from base core up to top smoke level
               const particleVelocity = 0.0012 + seed_SpeedScale * 0.0016;
-              const progress = ((t * particleVelocity + p * (1 / numParticles)) % 1.0);
+              const progress = ((t * particleVelocity * speedMultiplier + p * (1 / numParticles)) % 1.0);
 
               // Layout positions
               const initialX = -radius * 0.42 + seed_XOffset * radius * 0.84;
               const emberY = radius * 0.62 - progress * radius * 1.5;
-              const xSway = Math.sin(t * 0.0045 + seed_Phase) * (18 + seed_SpeedScale * 25) * progress;
+              const xSway = Math.sin(t * 0.0045 * speedMultiplier + seed_Phase) * (18 + seed_SpeedScale * 25) * progress;
               const emberX = initialX + xSway;
 
               // Size shrinks as it rises and cools down
-              const emberSize = (1.5 + seed_XOffset * 2.5) * (1.1 - progress) * effectScale;
+              const emberSize = (1.5 + seed_XOffset * 2.5) * (1.1 - progress) * effectScale * (0.8 + speedMultiplier * 0.2);
               
               if (emberSize > 0) {
                   // Temperature colors mapping (shorter lifespans turn redder/darker, matching shifting fire colors)
-                  const alpha = (0.7 + 0.3 * Math.sin(t * 0.015 + p)) * (1.0 - progress);
+                  const alpha = (0.7 + 0.3 * Math.sin(t * 0.015 * speedMultiplier + p)) * (1.0 - progress);
                   const emberHue = (fireHueBase + p * 10) % 360;
                   c.fillStyle = `hsla(${emberHue}, 100%, ${Math.floor(45 + 50 * (1.0 - progress))}%, ${alpha})`;
                   
