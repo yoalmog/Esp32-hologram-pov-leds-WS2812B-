@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
-import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
@@ -125,15 +124,20 @@ async function startServer() {
     res.send("[SYS] Boot complete\n[WIFI] Connected\n[POV] Frame buffer ready\n[HTTP] Server started on port 80");
   });
 
+  // Determine if we are running in production mode
+  const distPath = path.join(process.cwd(), 'dist');
+  const hasBuild = fs.existsSync(path.join(distPath, 'index.html'));
+  const isProd = process.env.NODE_ENV === "production" || hasBuild;
+
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProd) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*all', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
