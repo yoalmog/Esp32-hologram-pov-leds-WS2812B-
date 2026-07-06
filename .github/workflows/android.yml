@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Native Android App
 
 on:
   push:
@@ -13,13 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: set up Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: npm install
 
       - name: Build Web Project
@@ -30,6 +30,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: 'gradle'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -40,14 +41,29 @@ jobs:
       - name: Fix Gradle Wrapper
         run: bash fix_gradle_wrapper.sh
 
-      - name: Build Android APK
+      - name: Build Android App (Debug APK, Release APK & Release AAB)
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
+          ./gradlew assembleRelease
+          ./gradlew bundleRelease
 
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug.apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload Unsigned Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned.apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Upload Unsigned Release AAB (Android App Bundle)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned.aab
+          path: android/app/build/outputs/bundle/release/app-release-unsigned.aab
+
