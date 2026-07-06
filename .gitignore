@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Ignore local Gradle distributions and zip archives
+gradle-8.14.3/
+gradle-*-bin.zip
+*.zip
