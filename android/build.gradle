@@ -1,56 +1,61 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
-
 plugins {
-    id 'com.android.application' version '8.7.2' apply false
-    id 'com.android.library' version '8.7.2' apply false
-    id 'org.jetbrains.kotlin.android' version '2.2.0' apply false
+    id 'com.android.application'
 }
 
-buildscript {
-    
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.google.gms:google-services:4.4.2'
-
-        // NOTE: Do not place your application dependencies here; they belong
-        // in the individual module build.gradle files
-    }
-}
-
-apply from: "variables.gradle"
-
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-
-subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.android {
-                compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_21
-                    targetCompatibility JavaVersion.VERSION_21
-                }
-            }
-        }
-        project.tasks.withType(JavaCompile).configureEach {
-            sourceCompatibility = '21'
-            targetCompatibility = '21'
-        }
-        project.tasks.configureEach { task ->
-            if (task.name.contains("Kotlin") && task.hasProperty("kotlinOptions")) {
-                task.kotlinOptions.jvmTarget = "21"
-            }
+android {
+    namespace = "com.example.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.example.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
 }
 
-task clean(type: Delete) {
-    delete rootProject.buildDir
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.activity:activity:$androidxActivityVersion"
+    implementation "androidx.core:core-ktx:$androidxCoreVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
