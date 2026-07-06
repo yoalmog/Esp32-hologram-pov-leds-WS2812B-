@@ -42,56 +42,28 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Make Gradlew Executable
-        run: |
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-          elif [ -f "android/gradlew" ]; then
-            cd android && chmod +x gradlew
-          fi
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.14.3'
 
       - name: Run Code Analysis & Linting (Ktlint / Android Lint)
         run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew lintDebug
-          elif [ -f "android/gradlew" ]; then
-            cd android && ./gradlew lintDebug
-          else
-            echo "Gradle wrapper not found, skipping lint."
-          fi
+          cd android && gradle lintDebug
         continue-on-error: true
 
       - name: Run Kotlin Unit Tests
         run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew testDebugUnitTest
-          elif [ -f "android/gradlew" ]; then
-            cd android && ./gradlew testDebugUnitTest
-          else
-            echo "Gradle wrapper not found, skipping unit tests."
-          fi
+          cd android && gradle testDebugUnitTest
         continue-on-error: true
 
       - name: Build Debug APK (Kotlin + Jetpack Compose)
         run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew assembleDebug
-          elif [ -f "android/gradlew" ]; then
-            cd android && ./gradlew assembleDebug
-          else
-            echo "Building with root wrapper failed or not found."
-          fi
+          cd android && gradle assembleDebug
 
       - name: Build Release APK & AAB (Kotlin + Jetpack Compose)
         run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew assembleRelease
-            ./gradlew bundleRelease
-          elif [ -f "android/gradlew" ]; then
-            cd android && ./gradlew assembleRelease && ./gradlew bundleRelease
-          else
-            echo "Building with root wrapper failed or not found."
-          fi
+          cd android && gradle assembleRelease && gradle bundleRelease
 
       - name: Upload Test Reports
         uses: actions/upload-artifact@v4

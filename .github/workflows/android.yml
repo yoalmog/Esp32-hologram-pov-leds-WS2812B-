@@ -38,16 +38,17 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Fix Gradle Wrapper
-        run: bash fix_gradle_wrapper.sh
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.14.3'
 
       - name: Build Android App (Debug APK, Release APK & Release AAB)
         run: |
           cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
-          ./gradlew assembleRelease
-          ./gradlew bundleRelease
+          gradle assembleDebug
+          gradle assembleRelease
+          gradle bundleRelease
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
